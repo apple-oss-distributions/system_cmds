@@ -7,43 +7,39 @@
 # and Makefile.postamble (both optional), and Makefile will include them.
 #
 
-NAME = mach_init
+NAME = auditd
 
 PROJECTVERSION = 2.8
 PROJECT_TYPE = Tool
 
-HFILES = bootstrap_internal.h error_log.h lists.h
+HFILES = auditd.h
 
-CFILES = bootstrap.c error_log.c lists.c rpc_services.c
+CFILES = audit_warn.c auditd.c
 
-OTHERSRCS = Makefile.preamble Makefile bootstrap.defs mach_init.8\
-            Makefile.postamble
+OTHERSRCS = Makefile.preamble Makefile Makefile.postamble\
+            audit_triggers.defs auditd_control.defs auditd.8 rc.audit
 
 
 MAKEFILEDIR = $(MAKEFILEPATH)/pb_makefiles
 CODE_GEN_STYLE = DYNAMIC
 MAKEFILE = tool.make
-NEXTSTEP_INSTALLDIR = /sbin
-WINDOWS_INSTALLDIR = /sbin
-PDO_UNIX_INSTALLDIR = /sbin
-LIBS = -lbsm
+NEXTSTEP_INSTALLDIR = /usr/sbin
+WINDOWS_INSTALLDIR = /Library/Executables
+PDO_UNIX_INSTALLDIR = /usr/sbin
+LIBS = 
 DEBUG_LIBS = $(LIBS)
 PROF_LIBS = $(LIBS)
 
 
-NEXTSTEP_PB_CFLAGS = -DMACH_USER_API
-WINDOWS_PB_CFLAGS = -DMACH_USER_API
-PDO_UNIX_PB_CFLAGS = -DMACH_USER_API
+NEXTSTEP_PB_LDFLAGS = -lbsm
 
-
-NEXTSTEP_BUILD_OUTPUT_DIR = /tmp/$(USER)/BUILD
 
 NEXTSTEP_OBJCPLUS_COMPILER = /usr/bin/cc
 WINDOWS_OBJCPLUS_COMPILER = $(DEVDIR)/gcc
 PDO_UNIX_OBJCPLUS_COMPILER = $(NEXTDEV_BIN)/gcc
 NEXTSTEP_JAVA_COMPILER = /usr/bin/javac
 WINDOWS_JAVA_COMPILER = $(JDKBINDIR)/javac.exe
-PDO_UNIX_JAVA_COMPILER = $(NEXTDEV_BIN)/javac
+PDO_UNIX_JAVA_COMPILER = $(JDKBINDIR)/javac
 
 include $(MAKEFILEDIR)/platform.make
 
