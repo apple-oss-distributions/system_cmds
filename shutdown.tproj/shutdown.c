@@ -61,6 +61,11 @@ static const char rcsid[] =
 #include <string.h>
 #include <unistd.h>
 
+#include <errno.h>
+#include <bsm/libbsm.h>
+#include <bsm/audit_uevents.h>
+
+
 #include "pathnames.h"
 
 #ifdef __APPLE__
@@ -102,7 +107,11 @@ static char mbuf[BUFSIZ];
 static const char *nosync, *whom;
 
 void badtime(void);
+#ifdef __APPLE__
+void log_and_exec_reboot_or_halt(void);
+#else
 void die_you_gravy_sucking_pig_dog(void);
+#endif
 void finish(int);
 void getoffset(char *);
 void loop(void);
@@ -110,6 +119,7 @@ void nolog(void);
 void timeout(int);
 void timewarn(int);
 void usage(const char *);
+int audit_shutdown(int);
 
 int
 main(argc, argv)
@@ -223,6 +233,7 @@ main(argc, argv)
 		whom = (pw = getpwuid(getuid())) ? pw->pw_name : "???";
 
 #ifdef DEBUG
+	audit_shutdown(0);
 	(void)putc('\n', stdout);
 #else
 	(void)setpriority(PRIO_PROCESS, 0, PRIO_MIN);
@@ -230,11 +241,15 @@ main(argc, argv)
 		int forkpid;
 
 		forkpid = fork();
-		if (forkpid == -1)
+		if (forkpid == -1) {
+			audit_shutdown(1);
 			err(1, "fork");
-		if (forkpid)
+		}
+		if (forkpid) {
 			errx(0, "[pid %d]", forkpid);
+		}
 	}
+	audit_shutdown(0);
 	setsid();
 #endif
 	openlog("shutdown", LOG_CONS, LOG_AUTH);
@@ -281,7 +296,11 @@ loop()
 		if (!tp->timeleft)
 			break;
 	}
+#ifdef __APPLE__
+	log_and_exec_reboot_or_halt();
+#else
 	die_you_gravy_sucking_pig_dog();
+#endif
 }
 
 static jmp_buf alarmbuf;
@@ -351,7 +370,11 @@ timeout(signo)
 }
 
 void
+#ifdef __APPLE__
+log_and_exec_reboot_or_halt()
+#else
 die_you_gravy_sucking_pig_dog()
+#endif
 {
 	char *empty_environ[] = { NULL };
 
@@ -362,7 +385,9 @@ die_you_gravy_sucking_pig_dog()
 	    doreboot ? "reboot" : dohalt ? "halt" : 
 #endif
 	    "shutdown", whom, mbuf);
+#ifndef __APPLE__
 	(void)sleep(2);
+#endif
 
 	(void)printf("\r\nSystem shutdown time has arrived\007\007\r\n");
 	if (killflg) {
@@ -382,6 +407,16 @@ die_you_gravy_sucking_pig_dog()
 		(void)printf(" no sync");
 	(void)printf("\nkill -HUP 1\n");
 #else
+#ifdef __APPLE__
+	{
+		int ws = 0;
+		int fp = fork();
+		if (fp == 0)
+			execl(_PATH_BSHELL, _PATH_BSHELL, "/etc/rc.shutdown", NULL);
+		else if (fp > 0)
+			waitpid(fp, &ws, 0);
+	}
+#endif
 	if (!oflag) {
 		(void)kill(1, doreboot ? SIGINT :	/* reboot */
 			      dohalt ? SIGUSR1 :	/* halt */
@@ -556,4 +591,50 @@ usage(cp)
 	    "usage: shutdown [-] [-h | -p | -r | -k] [-o [-n]]"
 	    " time [warning-message ...]\n");
 	exit(1);
+}
+
+/*
+ * The following tokens are included in the audit record for shutdown
+ * header
+ * subject
+ * return
+ */  
+int audit_shutdown(int exitstatus)
+{
+	int aufd;
+	token_t *tok;
+	long au_cond;
+
+	/* If we are not auditing, don't cut an audit record; just return */
+	if (auditon(A_GETCOND, &au_cond, sizeof(long)) < 0) {
+		fprintf(stderr, "shutdown: Could not determine audit condition\n");
+		return 0;
+	}
+	if (au_cond == AUC_NOAUDIT)
+		return 0;
+
+	if((aufd = au_open()) == -1) {
+		fprintf(stderr, "shutdown: Audit Error: au_open() failed\n");
+		exit(1);      
+	}
+
+	/* The subject that performed the operation */
+	if((tok = au_to_me()) == NULL) {
+		fprintf(stderr, "shutdown: Audit Error: au_to_me() failed\n");
+		exit(1);
+	}
+	au_write(aufd, tok);
+
+	/* success and failure status */
+	if((tok = au_to_return32(exitstatus, errno)) == NULL) {
+		fprintf(stderr, "shutdown: Audit Error: au_to_return32() failed\n");
+		exit(1);
+	}
+	au_write(aufd, tok);
+
+	if(au_close(aufd, 1, AUE_shutdown) == -1) {
+		fprintf(stderr, "shutdown: Audit Error: au_close() failed\n");
+		exit(1);
+	}
+	return 1;
 }

@@ -3,7 +3,7 @@
     FILESTABLE = {
         C_FILES = (); 
         H_FILES = (pathnames.h); 
-        OTHER_LIBS = (); 
+        OTHER_LIBS = (bsm, pam, "pam_misc"); 
         OTHER_LINKED = (klogin.c, login.c); 
         OTHER_SOURCES = (Makefile.preamble, Makefile, Makefile.postamble, login.1); 
         SUBPROJECTS = (); 

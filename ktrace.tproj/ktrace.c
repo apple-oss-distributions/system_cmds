@@ -3,22 +3,21 @@
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
- * This file contains Original Code and/or Modifications of Original Code
- * as defined in and that are subject to the Apple Public Source License
- * Version 2.0 (the 'License'). You may not use this file except in
- * compliance with the License. Please obtain a copy of the License at
- * http://www.opensource.apple.com/apsl/ and read it before using this
- * file.
+ * "Portions Copyright (c) 1999 Apple Computer, Inc.  All Rights
+ * Reserved.  This file contains Original Code and/or Modifications of
+ * Original Code as defined in and that are subject to the Apple Public
+ * Source License Version 1.0 (the 'License').  You may not use this file
+ * except in compliance with the License.  Please obtain a copy of the
+ * License at http://www.apple.com/publicsource and read it before using
+ * this file.
  * 
  * The Original Code and all software distributed under the License are
  * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
- * Please see the License for the specific language governing rights and
- * limitations under the License.
+ * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
+ * License for the specific language governing rights and limitations
+ * under the License."
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
@@ -55,17 +54,19 @@
  * SUCH DAMAGE.
  */
 
+#include <sys/cdefs.h>
+
 #ifndef lint
-static char copyright[] =
+__unused static char copyright[] =
 "@(#) Copyright (c) 1988, 1993\n\
 	The Regents of the University of California.  All rights reserved.\n";
 #endif /* not lint */
 
 #ifndef lint
 #if 0
-static char sccsid[] = "@(#)ktrace.c	8.1 (Berkeley) 6/6/93";
+__unused static char sccsid[] = "@(#)ktrace.c	8.1 (Berkeley) 6/6/93";
 #endif
-static const char rcsid[] =
+__unused static const char rcsid[] =
   "$FreeBSD: src/usr.bin/ktrace/ktrace.c,v 1.12.2.3 2001/07/11 00:29:27 mikeh Exp $";
 #endif /* not lint */
 
@@ -79,19 +80,27 @@ static const char rcsid[] =
 
 #include <err.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
 
 #include "ktrace.h"
 
 void no_ktrace __P((int));
 void usage __P((void));
+int rpid(char *p);
 
-main(argc, argv)
-	int argc;
-	char **argv;
+int
+main(int argc, char *argv[])
 {
 	enum { NOTSET, CLEAR, CLEARALL } clear;
-	int append, ch, fd, inherit, ops, pid, pidset, trpoints;
+	int append;
+	int ch;
+	int fd;
+	int inherit;
+	int ops;
+	int pid = 1;	/* protected by pidset */
+	int pidset;
+	int trpoints;
 	char *tracefile;
 	mode_t omask;
 	struct stat sb;
@@ -190,8 +199,8 @@ main(argc, argv)
 	exit(0);
 }
 
-rpid(p)
-	char *p;
+int
+rpid(char *p)
 {
 	static int first;
 
@@ -207,7 +216,7 @@ rpid(p)
 }
 
 void
-usage()
+usage(void)
 {
 	(void)fprintf(stderr, "%s\n%s\n",
 "usage: ktrace [-aCcdi] [-f trfile] [-g pgrp | -p pid] [-t cnisuw]",
@@ -216,8 +225,7 @@ usage()
 }
 
 void
-no_ktrace(sig)
-        int sig;
+no_ktrace(int sig)
 {
         (void)fprintf(stderr,
 "error:\tktrace() system call not supported in the running kernel\n\tre-compile kernel with 'options KTRACE'\n");

@@ -1,33 +1,31 @@
 /*
- * Copyright (c) 2000 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2000-2005 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
- * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
- * This file contains Original Code and/or Modifications of Original Code
- * as defined in and that are subject to the Apple Public Source License
- * Version 2.0 (the 'License'). You may not use this file except in
- * compliance with the License. Please obtain a copy of the License at
- * http://www.opensource.apple.com/apsl/ and read it before using this
- * file.
- * 
- * The Original Code and all software distributed under the License are
- * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
+ *
+ * The contents of this file constitute Original Code as defined in and
+ * are subject to the Apple Public Source License Version 1.1 (the
+ * "License").  You may not use this file except in compliance with the
+ * License.  Please obtain a copy of the License at
+ * http://www.apple.com/publicsource and read it before using this file.
+ *
+ * This Original Code and all software distributed under the License are
+ * distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
- * Please see the License for the specific language governing rights and
- * limitations under the License.
- * 
+ * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
+ * License for the specific language governing rights and limitations
+ * under the License.
+ *
  * @APPLE_LICENSE_HEADER_END@
  */
 /*
-cc -o nvram nvram.c -framework IOKit -Wall
+cc -o nvram nvram.c -framework CoreFoundation -framework IOKit -Wall
 */
 
 #include <stdio.h>
 #include <IOKit/IOKitLib.h>
+#include <IOKit/IOKitKeys.h>
 #include <CoreFoundation/CoreFoundation.h>
 
 // Prototypes
@@ -39,6 +37,7 @@ static void SetOrGetOFVariable(char *str);
 static kern_return_t GetOFVariable(char *name, CFStringRef *nameRef,
 				   CFTypeRef *valueRef);
 static kern_return_t SetOFVariable(char *name, char *value);
+static void DeleteOFVariable(char *name);
 static void PrintOFVariables(void);
 static void PrintOFVariable(const void *key,const void *value,void *context);
 static CFTypeRef ConvertValueToCFTypeRef(CFTypeID typeID, char *value);
@@ -88,6 +87,15 @@ int main(int argc, char **argv)
 	    ParseFile(argv[cnt]);
 	  } else {
 	    UsageMessage("missing filename");
+	  }
+	  break;
+	  
+	case 'd':
+	  cnt++;
+	  if (cnt < argc && *argv[cnt] != '-') {
+	    DeleteOFVariable(argv[cnt]);
+	  } else {
+	    UsageMessage("missing name");
 	  }
 	  break;
 	  
@@ -143,9 +151,10 @@ static void UsageMessage(char *message)
 {
   Error("(usage: %s)", (long)message);
   
-  printf("%s [-p] [-f filename] name[=value] ...\n", gToolName);
+  printf("%s [-p] [-f filename] [-d name] name[=value] ...\n", gToolName);
   printf("\t-p         print all Open Firmware variables\n");
   printf("\t-f         set Open Firmware variables from a text file\n");
+  printf("\t-d         delete the named variable\n");
   printf("\tname=value set named variable\n");
   printf("\tname       print variable\n");
   printf("Note that arguments and options are executed in order.\n");
@@ -281,7 +290,7 @@ static void ParseFile(char *fileName)
 
 // SetOrGetOFVariable(str)
 //
-//   Parse the input string the set or get the specified
+//   Parse the input string, then set or get the specified
 //   Open Firmware variable.
 //
 static void SetOrGetOFVariable(char *str)
@@ -336,9 +345,9 @@ static kern_return_t GetOFVariable(char *name, CFStringRef *nameRef,
 				   CFTypeRef *valueRef)
 {
   *nameRef = CFStringCreateWithCString(kCFAllocatorDefault, name,
-				       kCFStringEncodingMacRoman);
+				       kCFStringEncodingUTF8);
   if (*nameRef == 0) {
-    FatalError(-1, "Error CFString for key %s", (long)name);
+    FatalError(-1, "Error (-1) creating CFString for key %s", (long)name);
   }
   
   *valueRef = IORegistryEntryCreateCFProperty(gOptionsRef, *nameRef, 0, 0);
@@ -360,7 +369,7 @@ static kern_return_t SetOFVariable(char *name, char *value)
   kern_return_t result;
   
   nameRef = CFStringCreateWithCString(kCFAllocatorDefault, name,
-				      kCFStringEncodingMacRoman);
+				      kCFStringEncodingUTF8);
   if (nameRef == 0) {
     FatalError(-1, "Error (-1) creating CFString for key %s", (long)name);
   }
@@ -413,6 +422,17 @@ static kern_return_t SetOFVariable(char *name, char *value)
 }
 
 
+// DeleteOFVariable(name)
+//
+//   Delete the named Open Firmware variable.
+//   
+//
+static void DeleteOFVariable(char *name)
+{
+  SetOFVariable(kIONVRAMDeletePropertyKey, name);
+}
+
+
 // PrintOFVariables()
 //
 //   Print all of the Open Firmware variables.
@@ -439,22 +459,33 @@ static void PrintOFVariables()
 static void PrintOFVariable(const void *key, const void *value, void *context)
 {
   long          cnt, cnt2;
+  CFIndex       nameLen;
+  char          *nameBuffer = 0;
   const char    *nameString;
   char          numberBuffer[10];
   const uint8_t *dataPtr;
   uint8_t       dataChar;
   char          *dataBuffer = 0;
+  CFIndex       valueLen;
+  char          *valueBuffer = 0;
   const char    *valueString = 0;
   uint32_t      number, length;
   CFTypeID      typeID;
   
   // Get the OF variable's name.
-  nameString = CFStringGetCStringPtr(key, kCFStringEncodingMacRoman);
+  nameLen = CFStringGetLength(key) + 1;
+  nameBuffer = malloc(nameLen);
+  if( nameBuffer && CFStringGetCString(key, nameBuffer, nameLen, kCFStringEncodingUTF8) )
+    nameString = nameBuffer;
+  else {
+    Error("Error (-1) Unable to convert property name to C string", 0);
+    nameString = "<UNPRINTABLE>";
+  }
   
   // Get the OF variable's type.
   typeID = CFGetTypeID(value);
   
-  if        (typeID == CFBooleanGetTypeID()) {
+  if (typeID == CFBooleanGetTypeID()) {
     if (CFBooleanGetValue(value)) valueString = "true";
     else valueString = "false";
   } else if (typeID == CFNumberGetTypeID()) {
@@ -464,7 +495,14 @@ static void PrintOFVariable(const void *key, const void *value, void *context)
     else sprintf(numberBuffer, "0x%x", number);
     valueString = numberBuffer;
   } else if (typeID == CFStringGetTypeID()) {
-    valueString = CFStringGetCStringPtr(value, kCFStringEncodingMacRoman);
+    valueLen = CFStringGetLength(value) + 1;
+    valueBuffer = malloc(valueLen + 1);
+    if ( valueBuffer && CFStringGetCString(value, valueBuffer, valueLen, kCFStringEncodingUTF8) )
+      valueString = valueBuffer;
+    else {
+      Error("Error (-1) Unable to convert value to C string", 0);
+      valueString = "<UNPRINTABLE>";
+    }
   } else if (typeID == CFDataGetTypeID()) {
     length = CFDataGetLength(value);
     if (length == 0) valueString = "";
@@ -484,12 +522,16 @@ static void PrintOFVariable(const void *key, const void *value, void *context)
 	valueString = dataBuffer;
       }
     }
-  } else return;
+  } else {
+    valueString="<INVALID>";
+  }
   
   if ((nameString != 0) && (valueString != 0))
     printf("%s\t%s\n", nameString, valueString);
   
   if (dataBuffer != 0) free(dataBuffer);
+  if (nameBuffer != 0) free(nameBuffer);
+  if (valueBuffer != 0) free(valueBuffer);
 }
 
 
@@ -512,7 +554,7 @@ static CFTypeRef ConvertValueToCFTypeRef(CFTypeID typeID, char *value)
 			      &number);
   } else if (typeID == CFStringGetTypeID()) {
     valueRef = CFStringCreateWithCString(kCFAllocatorDefault, value,
-					 kCFStringEncodingMacRoman);
+					 kCFStringEncodingUTF8);
   } else if (typeID == CFDataGetTypeID()) {
     length = strlen(value);
     for (cnt = cnt2 = 0; cnt < length; cnt++, cnt2++) {

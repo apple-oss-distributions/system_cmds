@@ -3,22 +3,21 @@
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
- * This file contains Original Code and/or Modifications of Original Code
- * as defined in and that are subject to the Apple Public Source License
- * Version 2.0 (the 'License'). You may not use this file except in
- * compliance with the License. Please obtain a copy of the License at
- * http://www.opensource.apple.com/apsl/ and read it before using this
- * file.
+ * "Portions Copyright (c) 1999 Apple Computer, Inc.  All Rights
+ * Reserved.  This file contains Original Code and/or Modifications of
+ * Original Code as defined in and that are subject to the Apple Public
+ * Source License Version 1.0 (the 'License').  You may not use this file
+ * except in compliance with the License.  Please obtain a copy of the
+ * License at http://www.apple.com/publicsource and read it before using
+ * this file.
  * 
  * The Original Code and all software distributed under the License are
  * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
- * Please see the License for the specific language governing rights and
- * limitations under the License.
+ * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
+ * License for the specific language governing rights and limitations
+ * under the License."
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
@@ -54,25 +53,23 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
+#include <sys/cdefs.h>
 
 #ifndef lint
-static const char copyright[] =
+__unused static const char copyright[] =
 "@(#) Copyright (c) 1988, 1993\n\
 	The Regents of the University of California.  All rights reserved.\n";
 #endif /* not lint */
 
 #ifndef lint
 #if 0
-static char sccsid[] = "@(#)kdump.c	8.1 (Berkeley) 6/6/93";
+__unused static char sccsid[] = "@(#)kdump.c	8.1 (Berkeley) 6/6/93";
 #endif
-static const char rcsid[] =
+__unused static const char rcsid[] =
   "$FreeBSD: src/usr.bin/kdump/kdump.c,v 1.17 1999/12/29 05:05:33 peter Exp $";
 #endif /* not lint */
 
-#define KERNEL
-extern int errno;
-#include <sys/errno.h>
-#undef KERNEL
+#include <errno.h>
 #include <sys/param.h>
 #include <sys/errno.h>
 #include <sys/time.h>
@@ -89,18 +86,32 @@ extern int errno;
 #include <vis.h>
 #include "ktrace.h"
 
+#define ERESTART -1
+#define EJUSTRETURN -2
 int timestamp, decimal, fancy = 1, tail, maxdata;
 char *tracefile = DEF_TRACEFILE;
 struct ktr_header ktr_header;
 
 #define eqs(s1, s2)	(strcmp((s1), (s2)) == 0)
 
-main(argc, argv)
-	int argc;
-	char *argv[];
+/* Forward declarations */
+void	usage(void);
+int	fread_tail(char *buf, int size, int num);
+void	dumpheader(struct ktr_header *kth);
+void	dumpheader(struct ktr_header *kth);
+void	ktrsyscall(struct ktr_syscall *ktr);
+void	ktrsysret(struct ktr_sysret *ktr);
+void	ktrnamei(char *cp, int len);
+void	ktrgenio(struct ktr_genio *ktr, int len);
+void	ktrpsig(struct ktr_psig *psig);
+void	ktrcsw(struct ktr_csw *cs);
+void	ktruser(int len, unsigned char *p);
+
+int
+main(int argc, char *argv[])
 {
 	int ch, ktrlen, size;
-	register void *m;
+	void *m;
 	int trpoints = ALL_POINTS;
 
 	(void) setlocale(LC_CTYPE, "");
@@ -145,7 +156,7 @@ main(argc, argv)
 		errx(1, "%s", strerror(ENOMEM));
 	if (!freopen(tracefile, "r", stdin))
 		err(1, "%s", tracefile);
-	while (fread_tail(&ktr_header, sizeof(struct ktr_header), 1)) {
+	while (fread_tail((char *)&ktr_header, sizeof(struct ktr_header), 1)) {
 		if (trpoints & (1<<ktr_header.ktr_type))
 			dumpheader(&ktr_header);
 		if ((ktrlen = ktr_header.ktr_len) < 0)
@@ -186,11 +197,12 @@ main(argc, argv)
 		if (tail)
 			(void)fflush(stdout);
 	}
+
+	return 0;
 }
 
-fread_tail(buf, size, num)
-	char *buf;
-	int num, size;
+int
+fread_tail(char *buf, int size, int num)
 {
 	int i;
 
@@ -201,8 +213,8 @@ fread_tail(buf, size, num)
 	return (i);
 }
 
-dumpheader(kth)
-	struct ktr_header *kth;
+void
+dumpheader(struct ktr_header *kth)
 {
 	static char unknown[64];
 	static struct timeval prevtime, temp;
@@ -242,7 +254,7 @@ dumpheader(kth)
 			timevalsub(&kth->ktr_time, &prevtime);
 			prevtime = temp;
 		}
-		(void)printf("%ld.%06ld ",
+		(void)printf("%ld.%06d ",
 		    kth->ktr_time.tv_sec, kth->ktr_time.tv_usec);
 	}
 	(void)printf("%s  ", type);
@@ -256,13 +268,14 @@ static char *ptrace_ops[] = {
 	"PT_TRACE_ME",	"PT_READ_I",	"PT_READ_D",	"PT_READ_U",
 	"PT_WRITE_I",	"PT_WRITE_D",	"PT_WRITE_U",	"PT_CONTINUE",
 	"PT_KILL",	"PT_STEP",	"PT_ATTACH",	"PT_DETACH",
+	"PT_SIGEXC",	"PT_THUPDATE",	"PT_ATTACHEXC",	
 };
 
-ktrsyscall(ktr)
-	register struct ktr_syscall *ktr;
+void
+ktrsyscall(struct ktr_syscall *ktr)
 {
-	register narg = ktr->ktr_narg;
-	register register_t *ip;
+	register_t narg = ktr->ktr_narg;
+	unsigned long long *ip;
 	char *ioctlname();
 
 	if (ktr->ktr_code >= nsyscalls || ktr->ktr_code < 0)
@@ -296,29 +309,17 @@ ktrsyscall(ktr)
 				if (*ip < sizeof(ptrace_ops) /
 				    sizeof(ptrace_ops[0]) && *ip >= 0)
 					(void)printf("(%s", ptrace_ops[*ip]);
-#ifdef PT_GETREGS
-				else if (*ip == PT_GETREGS)
-					(void)printf("(%s", "PT_GETREGS");
+#ifdef PT_FORCEQUOTA
+				else if (*ip == PT_FORCEQUOTA)
+					(void)printf("(%s", "PT_FORCEQUOTA");
 #endif
-#ifdef PT_SETREGS
-				else if (*ip == PT_SETREGS)
-					(void)printf("(%s", "PT_SETREGS");
+#ifdef PT_DENY_ATTACH
+				else if (*ip == PT_DENY_ATTACH)
+					(void)printf("(%s", "PT_DENY_ATTACH");
 #endif
-#ifdef PT_GETFPREGS
-				else if (*ip == PT_GETFPREGS)
-					(void)printf("(%s", "PT_GETFPREGS");
-#endif
-#ifdef PT_SETFPREGS
-				else if (*ip == PT_SETFPREGS)
-					(void)printf("(%s", "PT_SETFPREGS");
-#endif
-#ifdef PT_GETDBREGS
-				else if (*ip == PT_GETDBREGS)
-					(void)printf("(%s", "PT_GETDBREGS");
-#endif
-#ifdef PT_SETDBREGS
-				else if (*ip == PT_SETDBREGS)
-					(void)printf("(%s", "PT_SETDBREGS");
+#ifdef PT_FIRSTMACH
+				else if (*ip == PT_FIRSTMACH)
+					(void)printf("(%s", "PT_FIRSTMACH");
 #endif
 				else
 					(void)printf("(%ld", (long)*ip);
@@ -341,12 +342,12 @@ ktrsyscall(ktr)
 	(void)putchar('\n');
 }
 
-ktrsysret(ktr)
-	struct ktr_sysret *ktr;
+void
+ktrsysret(struct ktr_sysret *ktr)
 {
-	register register_t ret = ktr->ktr_retval;
-	register int error = ktr->ktr_error;
-	register int code = ktr->ktr_code;
+	register_t ret = ktr->ktr_retval;
+	int error = ktr->ktr_error;
+	int code = ktr->ktr_code;
 
 	if (code >= nsyscalls || code < 0)
 		(void)printf("[%d] ", code);
@@ -376,22 +377,22 @@ ktrsysret(ktr)
 	(void)putchar('\n');
 }
 
-ktrnamei(cp, len)
-	char *cp;
+void
+ktrnamei(char *cp, int len)
 {
 	(void)printf("\"%.*s\"\n", len, cp);
 }
 
-ktrgenio(ktr, len)
-	struct ktr_genio *ktr;
+void
+ktrgenio(struct ktr_genio *ktr, int len)
 {
-	register int datalen = len - sizeof (struct ktr_genio);
-	register char *dp = (char *)ktr + sizeof (struct ktr_genio);
-	register char *cp;
-	register int col = 0;
-	register width;
+	int datalen = len - sizeof (struct ktr_genio);
+	char *dp = (char *)ktr + sizeof (struct ktr_genio);
+	char *cp;
+	int col = 0;
+	int width;
 	char visbuf[5];
-	static screenwidth = 0;
+	static int screenwidth = 0;
 
 	if (screenwidth == 0) {
 		struct winsize ws;
@@ -446,16 +447,16 @@ ktrgenio(ktr, len)
 }
 
 char *signames[] = {
-	"NULL", "HUP", "INT", "QUIT", "ILL", "TRAP", "IOT",	/*  1 - 6  */
+	"NULL", "HUP", "INT", "QUIT", "ILL", "TRAP", "ABRT",	/*  1 - 6  */
 	"EMT", "FPE", "KILL", "BUS", "SEGV", "SYS",		/*  7 - 12 */
 	"PIPE", "ALRM",  "TERM", "URG", "STOP", "TSTP",		/* 13 - 18 */
 	"CONT", "CHLD", "TTIN", "TTOU", "IO", "XCPU",		/* 19 - 24 */
-	"XFSZ", "VTALRM", "PROF", "WINCH", "29", "USR1",	/* 25 - 30 */
+	"XFSZ", "VTALRM", "PROF", "WINCH", "INFO", "USR1",	/* 25 - 30 */
 	"USR2", NULL,						/* 31 - 32 */
 };
 
-ktrpsig(psig)
-	struct ktr_psig *psig;
+void
+ktrpsig(struct ktr_psig *psig)
 {
 	(void)printf("SIG%s ", signames[psig->signo]);
 	if (psig->action == SIG_DFL)
@@ -465,16 +466,15 @@ ktrpsig(psig)
 		    (u_long)psig->action, psig->mask, psig->code);
 }
 
-ktrcsw(cs)
-	struct ktr_csw *cs;
+void
+ktrcsw(struct ktr_csw *cs)
 {
 	(void)printf("%s %s\n", cs->out ? "stop" : "resume",
 		cs->user ? "user" : "kernel");
 }
 
-ktruser(len, p)
-	int len;
-	unsigned char *p;
+void
+ktruser(int len, unsigned char *p)
 {
 	(void)printf("%d ", len);
 	while (len--)
@@ -483,7 +483,8 @@ ktruser(len, p)
 		
 }
 
-usage()
+void
+usage(void)
 {
 	(void)fprintf(stderr,
 	    "usage: kdump [-dnlRT] [-f trfile] [-m maxdata] [-t [cnisuw]]\n");

@@ -3,28 +3,27 @@
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
- * This file contains Original Code and/or Modifications of Original Code
- * as defined in and that are subject to the Apple Public Source License
- * Version 2.0 (the 'License'). You may not use this file except in
- * compliance with the License. Please obtain a copy of the License at
- * http://www.opensource.apple.com/apsl/ and read it before using this
- * file.
+ * "Portions Copyright (c) 1999 Apple Computer, Inc.  All Rights
+ * Reserved.  This file contains Original Code and/or Modifications of
+ * Original Code as defined in and that are subject to the Apple Public
+ * Source License Version 1.0 (the 'License').  You may not use this file
+ * except in compliance with the License.  Please obtain a copy of the
+ * License at http://www.apple.com/publicsource and read it before using
+ * this file.
  * 
  * The Original Code and all software distributed under the License are
  * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
- * Please see the License for the specific language governing rights and
- * limitations under the License.
+ * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
+ * License for the specific language governing rights and limitations
+ * under the License."
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
 /*-
  * Copyright (c) 1987, 1990, 1993
- *	The Regents of the University of California.  All rights reserved.
+ *     The Regents of the University of California.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -36,8 +35,8 @@
  *    documentation and/or other materials provided with the distribution.
  * 3. All advertising materials mentioning features or use of this software
  *    must display the following acknowledgement:
- *	This product includes software developed by the University of
- *	California, Berkeley and its contributors.
+ *     This product includes software developed by the University of
+ *     California, Berkeley and its contributors.
  * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
@@ -58,42 +57,95 @@
 #ifndef lint
 static char copyright[] =
 "@(#) Copyright (c) 1987, 1990, 1993\n\
-	The Regents of the University of California.  All rights reserved.\n";
+       The Regents of the University of California.  All rights reserved.\n";
 #endif /* not lint */
 
 #ifndef lint
-static char sccsid[] = "@(#)update.c	8.1 (Berkeley) 6/6/93";
+static char sccsid[] = "@(#)update.c   8.1 (Berkeley) 6/6/93";
 #endif /* not lint */
 
-#include <sys/time.h>
-#include <signal.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <getopt.h>
 
-main()
+#include "power_mgmt.h"
+#include "disk_power.h"
+
+extern char *optarg;
+
+static void usage(const char *argv0) __attribute__((noreturn));
+static int parsetime(const char *arg);
+
+int main(int argc, char *const argv[])
 {
-	struct itimerval value;
-	void mysync();
+	int normal_intr = 30;
+	int save_pwr_intr = 30;
+	int on_bat, disk_up, last_sync = 0, current_sync_interval = 0;
+
+	if (argc > 3)
+		usage(argv[0]);
+	if (argc > 2)
+		save_pwr_intr = parsetime(argv[2]);
+	if (argc > 1)
+		normal_intr = parsetime(argv[1]);
+
+	if (normal_intr == -1 || save_pwr_intr == -1)
+		usage(argv[0]);
+
+	if (normal_intr > save_pwr_intr)
+		normal_intr = save_pwr_intr;
 
 	daemon(0, 0);
 
-	(void)signal(SIGALRM, mysync);
+	for (;;) {
+		if (last_sync >= current_sync_interval) {
+			sync();
+			last_sync = 0;
+		}
+		sleep(30);
+		last_sync += 30;
 
-	value.it_interval.tv_sec = 30;
-	value.it_interval.tv_usec = 0;
-	value.it_value = value.it_interval;
-	if (setitimer(ITIMER_REAL, &value, NULL)) {
-		perror("update: setitimer");
-		exit(1);
+		on_bat = on_battery_power();
+		disk_up = is_disk_awake();
+
+		current_sync_interval = normal_intr;
+		if (on_bat && !disk_up)
+			current_sync_interval = save_pwr_intr;
+		
 	}
-	for (;;)
-		sigpause(sigblock(0L));
-	/* NOTREACHED */
+
 }
 
-void
-mysync()
+static int parsetime(const char *arg)
 {
-	(void)sync();
+	char *q = NULL;
+	int r;
+
+	r = strtol(arg, &q, 10);
+
+	if (r < 1)
+		return -1;
+	if (arg == q)
+		return -1;
+
+	switch (*q) {
+	case 'h':
+		r *= 60;
+	case 'm':
+		r *= 60;
+	case 's':
+	case '\0':
+		break;
+	default:
+		return -1;
+	}
+
+	return r;
+}
+
+static void usage(const char *argv0)
+{
+	fprintf(stderr, "usage: %s [normal_interval [power_saving_interval]]\n", argv0);
+	exit(EXIT_FAILURE);
 }

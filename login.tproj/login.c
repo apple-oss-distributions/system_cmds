@@ -1,24 +1,23 @@
 /*
- * Copyright (c) 1999 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 1999-2004 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
- * This file contains Original Code and/or Modifications of Original Code
- * as defined in and that are subject to the Apple Public Source License
- * Version 2.0 (the 'License'). You may not use this file except in
- * compliance with the License. Please obtain a copy of the License at
- * http://www.opensource.apple.com/apsl/ and read it before using this
- * file.
+ * "Portions Copyright (c) 1999 Apple Computer, Inc.  All Rights
+ * Reserved.  This file contains Original Code and/or Modifications of
+ * Original Code as defined in and that are subject to the Apple Public
+ * Source License Version 1.0 (the 'License').  You may not use this file
+ * except in compliance with the License.  Please obtain a copy of the
+ * License at http://www.apple.com/publicsource and read it before using
+ * this file.
  * 
  * The Original Code and all software distributed under the License are
  * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
- * Please see the License for the specific language governing rights and
- * limitations under the License.
+ * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
+ * License for the specific language governing rights and limitations
+ * under the License."
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
@@ -55,10 +54,10 @@
  * SUCH DAMAGE.
  */
 
-#ifndef lint
+#if 0
 static char copyright[] =
 "@(#) Copyright (c) Apple Computer, Inc. 1997\n\n";
-#endif /* not lint */
+#endif
 
 /*
  * login [ name ]
@@ -88,6 +87,15 @@ static char copyright[] =
 #include <unistd.h>
 #include <utmp.h>
 
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <netdb.h>
+
+#include <bsm/libbsm.h>
+#include <bsm/audit_uevents.h>
+
 #ifdef USE_PAM
 #include <pam/pam_appl.h>
 #include <pam/pam_misc.h>
@@ -108,10 +116,17 @@ void	 timedout __P((int));
 #ifdef KERBEROS
 int	 klogin __P((struct passwd *, char *, char *, char *));
 #endif
+void  au_success();
+void  au_fail(char *, int);
+
 
 extern void login __P((struct utmp *));
+static void bail(int, int);
+static void refused(const char *, const char *, int);
 
 #define	TTYGRPNAME	"tty"		/* name of group to own ttys */
+#define NO_SLEEP_EXIT	0
+#define SLEEP_EXIT	5
 
 /*
  * This bounds the time given to login.  Not a define so it can
@@ -129,6 +144,18 @@ int	authok;
 struct	passwd *pwd;
 int	failures;
 char	term[64], *hostname, *username = NULL, *tty;
+#ifdef USE_PAM
+static pam_handle_t *pamh = NULL;
+static struct pam_conv conv = { misc_conv, NULL };
+static int pam_err;
+static int pam_silent = PAM_SILENT;
+static int pam_cred_established;
+static int pam_session_established;
+#endif /* USE_PAM */
+int hflag;
+
+#define NA_EVENT_STR_SIZE 25
+au_tid_t tid;
 
 int
 main(argc, argv)
@@ -138,21 +165,23 @@ main(argc, argv)
 	extern char **environ;
 	struct group *gr;
 	struct stat st;
-	struct timeval tp;
 	struct utmp utmp;
-	int ask, ch, cnt, oflag = 0, fflag, hflag, pflag, quietlog, rootlogin = 0, rval;
+	int ask, ch, cnt, oflag = 0, fflag, pflag, quietlog, rootlogin = 0;
 	uid_t uid;
 	uid_t euid;
 	gid_t egid;
-	char *domain, *p, *salt, *ttyn;
+	char *domain, *p, *ttyn;
 	char tbuf[MAXPATHLEN + 2], tname[sizeof(_PATH_TTY) + 10];
 	char localhost[MAXHOSTNAMELEN];
 #ifdef USE_PAM
-	pam_handle_t *pamh = NULL;
-	struct pam_conv conv = { misc_conv, NULL };
 	char **pmenv;
 	pid_t pid;
+#else
+	int rval;
+	char *salt;
 #endif
+
+	char auditsuccess = 1;
 
 	(void)signal(SIGALRM, timedout);
 	(void)alarm(timeout);
@@ -229,27 +258,44 @@ main(argc, argv)
 	else
 		tty = ttyn;
 
+	/* Set the terminal id */
+	audit_set_terminal_id(&tid);
+	if (fstat(STDIN_FILENO, &st) < 0) {
+		fprintf(stderr, "login: Unable to stat terminal\n");
+		au_fail("Unable to stat terminal", 1);
+		exit(-1);
+	}
+	if (S_ISCHR(st.st_mode)) {
+		tid.port = st.st_rdev;
+	} else {
+		tid.port = 0;
+	}
+
 #ifdef USE_PAM
-	rval = pam_start("login", username, &conv, &pamh);
-	if( rval != PAM_SUCCESS ) {
-		fprintf(stderr, "login: PAM Error:  %s\n", pam_strerror(pamh, rval));
+	pam_err = pam_start("login", username, &conv, &pamh);
+	if( pam_err != PAM_SUCCESS ) {
+		fprintf(stderr, "login: PAM Error:  %s\n", pam_strerror(pamh, pam_err));
+		au_fail("PAM Error", 1);
 		exit(1);
 	}
-	rval = pam_set_item(pamh, PAM_TTY, tty);
-	if( rval != PAM_SUCCESS ) {
-		fprintf(stderr, "login: PAM Error: %s\n", pam_strerror(pamh, rval));
-		exit(1);
-	}
-
-	rval = pam_set_item(pamh, PAM_RHOST, hostname);
-	if( rval != PAM_SUCCESS ) {
-		fprintf(stderr, "login: PAM Error: %s\n", pam_strerror(pamh, rval));
+	pam_err = pam_set_item(pamh, PAM_TTY, tty);
+	if( pam_err != PAM_SUCCESS ) {
+		fprintf(stderr, "login: PAM Error: %s\n", pam_strerror(pamh, pam_err));
+		au_fail("PAM Error", 1);
 		exit(1);
 	}
 
-	rval = pam_set_item(pamh, PAM_USER_PROMPT, "login: ");
-	if( rval != PAM_SUCCESS ) {
-		fprintf(stderr, "login: PAM Error: %s\n", pam_strerror(pamh, rval));
+	pam_err = pam_set_item(pamh, PAM_RHOST, hostname);
+	if( pam_err != PAM_SUCCESS ) {
+		fprintf(stderr, "login: PAM Error: %s\n", pam_strerror(pamh, pam_err));
+		au_fail("PAM Error", 1);
+		exit(1);
+	}
+
+	pam_err = pam_set_item(pamh, PAM_USER_PROMPT, "login: ");
+	if( pam_err != PAM_SUCCESS ) {
+		fprintf(stderr, "login: PAM Error: %s\n", pam_strerror(pamh, pam_err));
+		au_fail("PAM Error", 1);
 		exit(1);
 	}
 
@@ -261,14 +307,20 @@ main(argc, argv)
 		rootlogin = 1;
 
 	if( (pwd != NULL) && fflag && ((uid == 0) || (uid == pwd->pw_uid)) ){
-		rval = 0;
+		pam_err = 0;
+		auditsuccess = 0; /* we've simply opened a terminal window */
 	} else {
 
-		rval = pam_authenticate(pamh, 0);
-		while( (!oflag) && (cnt++ < 10) && ((rval == PAM_AUTH_ERR) ||
-				(rval == PAM_USER_UNKNOWN) ||
-				(rval == PAM_CRED_INSUFFICIENT) ||
-				(rval == PAM_AUTHINFO_UNAVAIL))) {
+		pam_err = pam_authenticate(pamh, 0);
+		while( (!oflag) && (cnt++ < 10) && ((pam_err == PAM_AUTH_ERR) ||
+				(pam_err == PAM_USER_UNKNOWN) ||
+				(pam_err == PAM_CRED_INSUFFICIENT) ||
+				(pam_err == PAM_AUTHINFO_UNAVAIL))) {
+			/* 
+			 * we are not exiting here, but this corresponds to 
+		 	 * a failed login event, so set exitstatus to 1 
+			 */
+			au_fail("Login incorrect", 1);
 			badlogin(username);
 			printf("Login incorrect\n");
 			rootlogin = 0;
@@ -277,39 +329,43 @@ main(argc, argv)
 			if( (pwd != NULL) && (pwd->pw_uid == 0) )
 				rootlogin = 1;
 			pam_set_item(pamh, PAM_USER, username);
-			rval = pam_authenticate(pamh, 0);
+			pam_err = pam_authenticate(pamh, 0);
 		}
 
-		if( rval != PAM_SUCCESS ) {
+		if( pam_err != PAM_SUCCESS ) {
 			pam_get_item(pamh, PAM_USER, (void *)&username);
 			badlogin(username);
 			printf("Login incorrect\n");
+			au_fail("Login incorrect", 1);
 			exit(1);
 		}
 
-		rval = pam_acct_mgmt(pamh, 0);
-		if( rval == PAM_NEW_AUTHTOK_REQD ) {
-			rval = pam_chauthtok(pamh, PAM_CHANGE_EXPIRED_AUTHTOK);
+		pam_err = pam_acct_mgmt(pamh, 0);
+		if( pam_err == PAM_NEW_AUTHTOK_REQD ) {
+			pam_err = pam_chauthtok(pamh, PAM_CHANGE_EXPIRED_AUTHTOK);
 		}
-		if( rval != PAM_SUCCESS ) {
-			fprintf(stderr, "login: PAM Error: %s\n", pam_strerror(pamh, rval));
+		if( pam_err != PAM_SUCCESS ) {
+			fprintf(stderr, "login: PAM Error: %s\n", pam_strerror(pamh, pam_err));
+			au_fail("PAM error", 1);
 			exit(1);
 		}
 	}
 
-	rval = pam_get_item(pamh, PAM_USER, (void *)&username);
-	if( (rval == PAM_SUCCESS) && username && *username) 
+	pam_err = pam_get_item(pamh, PAM_USER, (void *)&username);
+	if( (pam_err == PAM_SUCCESS) && username && *username) 
 		pwd = getpwnam(username);
 
-	rval = pam_open_session(pamh, 0);
-	if( rval != PAM_SUCCESS ) {
-		fprintf(stderr, "login: PAM Error: %s\n", pam_strerror(pamh, rval));
+	pam_err = pam_open_session(pamh, 0);
+	if( pam_err != PAM_SUCCESS ) {
+		fprintf(stderr, "login: PAM Error: %s\n", pam_strerror(pamh, pam_err));
+		au_fail("PAM error", 1);
 		exit(1);
 	}
 
-	rval = pam_setcred(pamh, PAM_ESTABLISH_CRED);
-	if( rval != PAM_SUCCESS ) {
-		fprintf(stderr, "login: PAM Error: %s\n", pam_strerror(pamh, rval));
+	pam_err = pam_setcred(pamh, PAM_ESTABLISH_CRED);
+	if( pam_err != PAM_SUCCESS ) {
+		fprintf(stderr, "login: PAM Error: %s\n", pam_strerror(pamh, pam_err));
+		au_fail("PAM error", 1);
 		exit(1);
 	}
 
@@ -337,8 +393,9 @@ main(argc, argv)
 		 * for nonexistent name (mistyped username).
 		 */
 		if (failures && strcmp(tbuf, username)) {
-			if (failures > (pwd ? 0 : 1))
+			if (failures > (pwd ? 0 : 1)) {
 				badlogin(tbuf);
+			}
 			failures = 0;
 		}
 		(void)strcpy(tbuf, username);
@@ -401,6 +458,7 @@ main(argc, argv)
 				syslog(LOG_NOTICE,
 				    "LOGIN %s REFUSED ON TTY %s",
 				     pwd->pw_name, tty);
+			au_fail("Login refused on terminal", 0);
 			continue;
 		}
 
@@ -413,8 +471,10 @@ main(argc, argv)
 		if (++cnt > 3) {
 			if (cnt >= 10) {
 				badlogin(username);
+				au_fail("Login incorrect", 1);
 				sleepexit(1);
 			}
+			au_fail("Login incorrect", 1);
 			sleep((u_int)((cnt - 3) * 5));
 		}
 	}
@@ -429,18 +489,27 @@ main(argc, argv)
 	if (!rootlogin)
 		checknologin();
 
+	/* Audit successful login */
+	if (auditsuccess)
+		au_success();
+
 	setegid(pwd->pw_gid);
 	seteuid(rootlogin ? 0 : pwd->pw_uid);
 
       	/* First do a stat in case the homedir is automounted */
-      	stat(pwd->pw_dir,&st);
+      	stat(pwd->pw_dir,&st);
 
-	if (chdir(pwd->pw_dir) < 0) {
-		(void)printf("No home directory %s!\n", pwd->pw_dir);
-		if (chdir("/"))
-			exit(0);
-		pwd->pw_dir = "/";
-		(void)printf("Logging in with home = \"/\".\n");
+	if (!*pwd->pw_dir || chdir(pwd->pw_dir) < 0) {
+		printf("No home directory %s!\n", pwd->pw_dir);
+		if (chdir("/")) {
+			refused("Cannot find root directory", "HOMEDIR", 1);
+		}
+		pwd->pw_dir = strdup("/");
+		if (pwd->pw_dir == NULL) {
+			syslog(LOG_NOTICE, "strdup(): %m");
+			bail(SLEEP_EXIT, 1);
+		}
+		printf("Logging in with home = \"/\".\n");
 	}
 	seteuid(euid);
 	setegid(egid);
@@ -463,10 +532,15 @@ main(argc, argv)
 	(void)chmod(ttyn, 0620);
 	(void)setgid(pwd->pw_gid);
 
-	initgroups(username, pwd->pw_gid);
+	if (initgroups(username, pwd->pw_gid) == -1)
+		syslog(LOG_ERR, "login: initgroups() failed");
 
 	if (*pwd->pw_shell == '\0')
-		pwd->pw_shell = _PATH_BSHELL;
+		pwd->pw_shell = strdup(_PATH_BSHELL);
+        if (pwd->pw_shell == NULL) {
+                syslog(LOG_NOTICE, "strdup(): %m");
+                bail(SLEEP_EXIT, 1);
+        }
 
 	/* Destroy environment unless user has requested its preservation. */
 	if (!pflag) {
@@ -497,8 +571,10 @@ main(argc, argv)
 	} else if( pid != 0 ) {
 		waitpid(pid, NULL, 0);
 		pam_setcred(pamh, PAM_DELETE_CRED);
-		rval = pam_close_session(pamh, 0);
-		pam_end(pamh,rval);
+		pam_err = pam_close_session(pamh, 0);
+		pam_end(pamh,pam_err);
+		chown(ttyn, 0, 0);
+		chmod(ttyn, 0666);
 		exit(0);
 	}
 
@@ -556,6 +632,142 @@ main(argc, argv)
 #else
 #define	NBUFSIZ		(MAXLOGNAME + 1)
 #endif
+
+/*
+ * The following tokens are included in the audit record for successful login attempts
+ * header
+ * subject
+ * return
+ */ 
+void au_success()
+{
+	token_t *tok;
+	int aufd;
+	au_mask_t aumask;
+	auditinfo_t auinfo;
+	uid_t uid = pwd->pw_uid;
+	gid_t gid = pwd->pw_gid;
+	pid_t pid = getpid();
+	long au_cond;
+
+	/* If we are not auditing, don't cut an audit record; just return */
+ 	if (auditon(A_GETCOND, &au_cond, sizeof(long)) < 0) {
+		fprintf(stderr, "login: Could not determine audit condition\n");
+		exit(1);
+	}
+	if (au_cond == AUC_NOAUDIT)
+		return;
+
+	/* Compute and Set the user's preselection mask */ 
+	if(au_user_mask(pwd->pw_name, &aumask) == -1) {
+		fprintf(stderr, "login: Could not set audit mask\n");
+		exit(1);
+	}
+
+	/* Set the audit info for the user */
+	auinfo.ai_auid = uid;
+	auinfo.ai_asid = pid;
+	bcopy(&tid, &auinfo.ai_termid, sizeof(auinfo.ai_termid));
+	bcopy(&aumask, &auinfo.ai_mask, sizeof(auinfo.ai_mask));
+	if(setaudit(&auinfo) != 0) {
+		fprintf(stderr, "login: setaudit failed:  %s\n", strerror(errno));
+		exit(1);
+	}
+
+	if((aufd = au_open()) == -1) {
+		fprintf(stderr, "login: Audit Error: au_open() failed\n");
+		exit(1);
+	}
+
+	/* The subject that is created (euid, egid of the current process) */
+	if((tok = au_to_subject32(uid, geteuid(), getegid(), 
+			uid, gid, pid, pid, &tid)) == NULL) {
+		fprintf(stderr, "login: Audit Error: au_to_subject32() failed\n");
+		exit(1);
+	}
+	au_write(aufd, tok);
+
+	if((tok = au_to_return32(0, 0)) == NULL) {
+		fprintf(stderr, "login: Audit Error: au_to_return32() failed\n");
+		exit(1);
+	}
+	au_write(aufd, tok);
+
+	if(au_close(aufd, 1, AUE_login) == -1) {
+		fprintf(stderr, "login: Audit Record was not committed.\n");
+		exit(1);
+	}
+}
+
+/*
+ * The following tokens are included in the audit record for successful login attempts
+ * header
+ * subject
+ * text
+ * return
+ */ 
+void au_fail(char *errmsg, int na)
+{
+	token_t *tok;
+	int aufd;
+	long au_cond;
+	uid_t uid;
+	gid_t gid;
+	pid_t pid = getpid();
+
+	/* If we are not auditing, don't cut an audit record; just return */
+ 	if (auditon(A_GETCOND, &au_cond, sizeof(long)) < 0) {
+		fprintf(stderr, "login: Could not determine audit condition\n");
+		exit(1);
+	}
+	if (au_cond == AUC_NOAUDIT)
+		return;
+
+	if((aufd = au_open()) == -1) {
+		fprintf(stderr, "login: Audit Error: au_open() failed\n");
+		exit(1);
+	}
+
+	if(na) {
+		/* Non attributable event */
+		/* Assuming that login is not called within a users' session => auid,asid == -1 */
+		if((tok = au_to_subject32(-1, geteuid(), getegid(), -1, -1, 
+				pid, -1, &tid)) == NULL) {
+
+			fprintf(stderr, "login: Audit Error: au_to_subject32() failed\n");
+			exit(1);
+		}
+	}
+	else {
+		/* we know the subject -- so use its value instead */
+		uid = pwd->pw_uid;
+		gid = pwd->pw_gid;
+		if((tok = au_to_subject32(uid, geteuid(), getegid(), 
+				uid, gid, pid, pid, &tid)) == NULL) {
+			fprintf(stderr, "login: Audit Error: au_to_subject32() failed\n");
+			exit(1);
+		}
+	}
+	au_write(aufd, tok);
+
+	/* Include the error message */
+	if((tok = au_to_text(errmsg)) == NULL) {
+		fprintf(stderr, "login: Audit Error: au_to_text() failed\n");
+		exit(1);
+	}
+	au_write(aufd, tok);
+
+	if((tok = au_to_return32(1, errno)) == NULL) {
+		fprintf(stderr, "login: Audit Error: au_to_return32() failed\n");
+		exit(1);
+	}
+	au_write(aufd, tok);
+
+	if(au_close(aufd, 1, AUE_login) == -1) {
+		fprintf(stderr, "login: Audit Error: au_close()  was not committed\n");
+		exit(1);
+	}
+}
 
 void
 getloginname()
@@ -643,6 +855,7 @@ checknologin()
 	if ((fd = open(_PATH_NOLOGIN, O_RDONLY, 0)) >= 0) {
 		while ((nchars = read(fd, tbuf, sizeof(tbuf))) > 0)
 			(void)write(fileno(stdout), tbuf, nchars);
+		au_fail("No login", 0);
 		sleepexit(0);
 	}
 }
@@ -733,4 +946,67 @@ sleepexit(eval)
 
 	(void)sleep(5);
 	exit(eval);
+}
+
+static void
+refused(const char *msg, const char *rtype, int lout)
+{
+
+        if (msg != NULL)
+		printf("%s.\n", msg);
+        if (hflag)
+                syslog(LOG_NOTICE, "LOGIN %s REFUSED (%s) FROM %s ON TTY %s",
+		       pwd->pw_name, rtype, hostname, tty);
+        else
+                syslog(LOG_NOTICE, "LOGIN %s REFUSED (%s) ON TTY %s",
+		       pwd->pw_name, rtype, tty);
+        if (lout)
+                bail(SLEEP_EXIT, 1);
+}
+
+#ifdef USE_PAM
+/*
+ * Log a PAM error
+ */
+static void
+pam_syslog(const char *msg)
+{
+        syslog(LOG_ERR, "%s: %s", msg, pam_strerror(pamh, pam_err));
+}
+
+/*
+ * Shut down PAM
+ */
+static void
+pam_cleanup()
+{
+
+        if (pamh != NULL) {
+                if (pam_session_established) {
+                        pam_err = pam_close_session(pamh, 0);
+                        if (pam_err != PAM_SUCCESS)
+                                pam_syslog("pam_close_session()");
+                }
+                pam_session_established = 0;
+                if (pam_cred_established) {
+                        pam_err = pam_setcred(pamh, pam_silent|PAM_DELETE_CRED);
+                        if (pam_err != PAM_SUCCESS)
+                                pam_syslog("pam_setcred()");
+                }
+                pam_cred_established = 0;
+                pam_end(pamh, pam_err);
+                pamh = NULL;
+        }
+}
+#endif /* USE_PAM */
+/*
+ * Exit, optionally after sleeping a few seconds
+ */
+void
+bail(int sec, int eval)
+{
+
+        pam_cleanup();
+        (void)sleep(sec);
+        exit(eval);
 }
