@@ -3,21 +3,22 @@
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * "Portions Copyright (c) 1999 Apple Computer, Inc.  All Rights
- * Reserved.  This file contains Original Code and/or Modifications of
- * Original Code as defined in and that are subject to the Apple Public
- * Source License Version 1.0 (the 'License').  You may not use this file
- * except in compliance with the License.  Please obtain a copy of the
- * License at http://www.apple.com/publicsource and read it before using
- * this file.
+ * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
+ * 
+ * This file contains Original Code and/or Modifications of Original Code
+ * as defined in and that are subject to the Apple Public Source License
+ * Version 2.0 (the 'License'). You may not use this file except in
+ * compliance with the License. Please obtain a copy of the License at
+ * http://www.opensource.apple.com/apsl/ and read it before using this
+ * file.
  * 
  * The Original Code and all software distributed under the License are
  * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
- * License for the specific language governing rights and limitations
- * under the License."
+ * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+ * Please see the License for the specific language governing rights and
+ * limitations under the License.
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
@@ -433,6 +434,7 @@ void sigintr()
         set_enable(0);
 	set_pidexclude(getpid(), 0);
         screen_update(log_fp);
+	endwin();
 	set_rtcdec(0);
 	set_remove();
 	
@@ -443,6 +445,7 @@ void leave()    /* exit under normal conditions -- signal handler */
 {
         set_enable(0);
 	set_pidexclude(getpid(), 0);
+	endwin();
 	set_rtcdec(0);
 	set_remove();
 	
@@ -1252,8 +1255,7 @@ void sample_sc(uint64_t start, uint64_t stop)
 	        if (type == DECR_TRAP)
 		        i_latency = handle_decrementer(kd);
 
-		now = (((uint64_t)kd->timestamp.tv_sec) << 32) |
-		        (uint64_t)((unsigned int)(kd->timestamp.tv_nsec));
+		now = kd->timestamp;
 
 		timestamp = ((double)now) / divisor;
 
@@ -1780,8 +1782,7 @@ kd_buf *log_decrementer(kd_buf *kd_beg, kd_buf *kd_end, kd_buf *end_of_sample, d
 	if (kd_stop >= end_of_sample)
 	        kd_stop = end_of_sample - 1;
 
-	now = (((uint64_t)kd_start->timestamp.tv_sec) << 32) |
-	        (uint64_t)((unsigned int)(kd_start->timestamp.tv_nsec));
+	now = kd_start->timestamp;
 	timestamp = ((double)now) / divisor;
 
 	for (kd = kd_start; kd <= kd_stop; kd++) {
@@ -1800,8 +1801,7 @@ kd_buf *log_decrementer(kd_buf *kd_beg, kd_buf *kd_end, kd_buf *end_of_sample, d
 		debugid = kd->debugid;
 		type    = kd->debugid & DBG_FUNC_MASK;
 
-		now = (((uint64_t)kd->timestamp.tv_sec) << 32) |
-		        (uint64_t)((unsigned int)(kd->timestamp.tv_nsec));
+		now = kd->timestamp;
 
 		timestamp = ((double)now) / divisor;
 

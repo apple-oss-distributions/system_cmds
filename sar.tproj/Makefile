@@ -7,14 +7,16 @@
 # and Makefile.postamble (both optional), and Makefile will include them.
 #
 
-NAME = top
+NAME = sar
 
 PROJECTVERSION = 2.8
 PROJECT_TYPE = Tool
 
-CFILES = top.c
+HFILES = sar.h
 
-OTHERSRCS = Makefile.preamble Makefile Makefile.postamble top.1
+CFILES = sar.c
+
+OTHERSRCS = Makefile.preamble Makefile Makefile.postamble sar.1
 
 
 MAKEFILEDIR = $(MAKEFILEPATH)/pb_makefiles
@@ -22,13 +24,14 @@ CODE_GEN_STYLE = DYNAMIC
 MAKEFILE = tool.make
 NEXTSTEP_INSTALLDIR = /usr/bin
 WINDOWS_INSTALLDIR = /Library/Executables
-PDO_UNIX_INSTALLDIR = /usr/bin
-LIBS = -lcurses
+PDO_UNIX_INSTALLDIR = /bin
+LIBS = 
 DEBUG_LIBS = $(LIBS)
 PROF_LIBS = $(LIBS)
 
 
-FRAMEWORKS = -framework CoreFoundation -framework IOKit
+HEADER_PATHS = -I.
+FRAMEWORKS = -framework Foundation
 
 
 NEXTSTEP_OBJCPLUS_COMPILER = /usr/bin/cc

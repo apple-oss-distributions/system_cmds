@@ -3,21 +3,22 @@
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * "Portions Copyright (c) 1999 Apple Computer, Inc.  All Rights
- * Reserved.  This file contains Original Code and/or Modifications of
- * Original Code as defined in and that are subject to the Apple Public
- * Source License Version 1.0 (the 'License').  You may not use this file
- * except in compliance with the License.  Please obtain a copy of the
- * License at http://www.apple.com/publicsource and read it before using
- * this file.
+ * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
+ * 
+ * This file contains Original Code and/or Modifications of Original Code
+ * as defined in and that are subject to the Apple Public Source License
+ * Version 2.0 (the 'License'). You may not use this file except in
+ * compliance with the License. Please obtain a copy of the License at
+ * http://www.opensource.apple.com/apsl/ and read it before using this
+ * file.
  * 
  * The Original Code and all software distributed under the License are
  * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
- * License for the specific language governing rights and limitations
- * under the License."
+ * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+ * Please see the License for the specific language governing rights and
+ * limitations under the License.
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
@@ -61,6 +62,24 @@
 char e1[] = ": ";
 char e2[] = ":,";
 
+#ifdef DIRECTORY_SERVICE
+ENTRY list[] = {
+	{ "login",		d_login,        p_login,  0,   5, e1,   },
+	{ "password",		d_passwd,       p_passwd, 0,   8, e1,   },
+	{ "uid",		d_uid,          p_uid,    0,   3, e1,   },
+	{ "gid",		d_gid,          p_gid,    0,   3, e1,   },
+	{ "change",		d_change,       p_change, 0,   6, NULL, },
+	{ "expire",		d_expire,       p_expire, 0,   6, NULL, },
+	{ "class",		d_class,        p_class,  0,   5, e1,   },
+	{ "home directory",	d_hdir,         p_hdir,   0,  14, e1,   },
+	{ "shell",		d_shell,        p_shell,  0,   5, e1,   },
+	{ "full name",		d_fullname,     p_gecos,  0,   9, e2,   },
+	{ "location",		d_location,     p_gecos,  0,   8, e2,   },
+	{ "office phone",	d_officephone,  p_gecos,  0,  12, e2,   },
+	{ "home phone",		d_homephone,    p_gecos,  0,  10, e2,   },
+	{ NULL },
+};
+#else /* DIRECTORY_SERVICE */
 ENTRY list[] = {
 	{ "login",		p_login,  1,   5, e1,   },
 	{ "password",		p_passwd, 1,   8, e1,   },
@@ -77,3 +96,4 @@ ENTRY list[] = {
 	{ "shell",		p_shell,  0,   5, e1,   },
 	{ NULL, 0, },
 };
+#endif /* DIRECTORY_SERVICE */

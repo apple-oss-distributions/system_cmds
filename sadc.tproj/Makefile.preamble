@@ -50,7 +50,13 @@
 #    AFTER_BUILD: targets to make after a build
 #
 #    BEFORE_INSTALL: targets to build before installing the product
+
+BEFORE_INSTALL += sa1 sa2
+
 #    AFTER_INSTALL: targets to build after installing the product
+
+AFTER_INSTALL += install-shell-scripts install-man-pages
+
 #    BEFORE_POSTINSTALL: targets to build before postinstalling every subproject
 #    AFTER_POSTINSTALL: targts to build after postinstalling every subproject
 #
@@ -135,5 +141,3 @@
 # standard locations.  NEXT_ROOT defaults to "C:/Apple" on Windows systems
 # and "" on other systems.
 DSTROOT = $(HOME)
-
-AFTER_INSTALL += install-man-page

@@ -53,6 +53,9 @@
 # Some compiler flags can be overridden here for certain build situations.
 #
 #    WARNING_CFLAGS:  flag used to set warning level (defaults to -Wmost)
+
+WARNING_CFLAGS = -Wall -Wno-long-double
+
 #    DEBUG_SYMBOLS_CFLAGS:  debug-symbol flag passed to all builds (defaults
 #	to -g)
 #    DEBUG_BUILD_CFLAGS:  flags passed during debug builds (defaults to -DDEBUG)
@@ -80,7 +83,7 @@
         # User/group ownership 
 #INSTALL_AS_GROUP = wheel
         # (probably want to set both of these) 
-INSTALL_PERMISSIONS = 4555
+#INSTALL_PERMISSIONS =
         # If set, 'install' chmod's executable to this
 
 
@@ -99,6 +102,9 @@ INSTALL_PERMISSIONS = 4555
 # derived files should go.
 #
 
-install-man-page:
-	install -d $(DSTROOT)/usr/share/man/man1
-	install -c -m 444 top.1 $(DSTROOT)/usr/share/man/man1/top.1
+SHAREDIR = /usr/share
+MANDIR   = $(SHAREDIR)/man/man1
+
+install-man-pages:
+	$(MKDIRS) $(DSTROOT)$(MANDIR)
+	install -c -m 444 sar.1 $(DSTROOT)$(MANDIR)/sar.1
