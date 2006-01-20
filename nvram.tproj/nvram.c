@@ -106,7 +106,7 @@ int main(int argc, char **argv)
 	}
       }
     } else {
-      // Other arguments will be Open Firmware variable requests.
+      // Other arguments will be firmware variable requests.
       SetOrGetOFVariable(str);
     }
   }
@@ -152,8 +152,8 @@ static void UsageMessage(char *message)
   Error("(usage: %s)", (long)message);
   
   printf("%s [-p] [-f filename] [-d name] name[=value] ...\n", gToolName);
-  printf("\t-p         print all Open Firmware variables\n");
-  printf("\t-f         set Open Firmware variables from a text file\n");
+  printf("\t-p         print all firmware variables\n");
+  printf("\t-f         set firmware variables from a text file\n");
   printf("\t-d         delete the named variable\n");
   printf("\tname=value set named variable\n");
   printf("\tname       print variable\n");
@@ -291,7 +291,7 @@ static void ParseFile(char *fileName)
 // SetOrGetOFVariable(str)
 //
 //   Parse the input string, then set or get the specified
-//   Open Firmware variable.
+//   firmware variable.
 //
 static void SetOrGetOFVariable(char *str)
 {
@@ -338,7 +338,7 @@ static void SetOrGetOFVariable(char *str)
 
 // GetOFVariable(name, nameRef, valueRef)
 //
-//   Get the named Open Firmware variable.
+//   Get the named firmware variable.
 //   Return it and it's symbol in valueRef and nameRef.
 //
 static kern_return_t GetOFVariable(char *name, CFStringRef *nameRef,
@@ -359,7 +359,7 @@ static kern_return_t GetOFVariable(char *name, CFStringRef *nameRef,
 
 // SetOFVariable(name, value)
 //
-//   Set or create an Open Firmware variable with name and value.
+//   Set or create an firmware variable with name and value.
 //
 static kern_return_t SetOFVariable(char *name, char *value)
 {
@@ -424,7 +424,7 @@ static kern_return_t SetOFVariable(char *name, char *value)
 
 // DeleteOFVariable(name)
 //
-//   Delete the named Open Firmware variable.
+//   Delete the named firmware variable.
 //   
 //
 static void DeleteOFVariable(char *name)
@@ -435,7 +435,7 @@ static void DeleteOFVariable(char *name)
 
 // PrintOFVariables()
 //
-//   Print all of the Open Firmware variables.
+//   Print all of the firmware variables.
 //
 static void PrintOFVariables()
 {
@@ -444,7 +444,7 @@ static void PrintOFVariables()
   
   result = IORegistryEntryCreateCFProperties(gOptionsRef, &dict, 0, 0);
   if (result != KERN_SUCCESS) {
-    FatalError(-1, "Error (%d) getting the Open Firmware variables", result);
+    FatalError(-1, "Error (%d) getting the firmware variables", result);
   }
   CFDictionaryApplyFunction(dict, &PrintOFVariable, 0);
   
@@ -454,7 +454,7 @@ static void PrintOFVariables()
 
 // PrintOFVariable(key, value, context)
 //
-//   Print the given Open Firmware variable.
+//   Print the given firmware variable.
 //
 static void PrintOFVariable(const void *key, const void *value, void *context)
 {

@@ -3,7 +3,7 @@
 .\"
 .TH nvram 8 "October 28, 2003"
 .SH NAME
-nvram \- manipulate Open Firmware NVRAM variables
+nvram \- manipulate firmware NVRAM variables
 .SH SYNOPSIS
 .B nvram
 [
@@ -22,7 +22,7 @@ nvram \- manipulate Open Firmware NVRAM variables
 .SH DESCRIPTION
 The
 .I nvram
-command allows manipulation of Open Firmware NVRAM variables.  It
+command allows manipulation of firmware NVRAM variables.  It
 can be used to get or set a variable.  It can also be used to print
 all of the variables or set a list of variables from a file.
 Changes to NVRAM variables are only saved by clean restart or shutdown.
@@ -43,15 +43,15 @@ data.
 .SH OPTIONS
 .TP
 .B \-p
-Print all of the Open Firmware variables.
+Print all of the firmware variables.
 .TP
 .BI \-f " filename"
-Set Open Firmware variables from a text file.  The file must be a
+Set firmware variables from a text file.  The file must be a
 list name=value statements.  If the last character of a line is
 \\, the value will be continued to the next line.
 .TP
 .BI \-d " name"
-Deletes the named Open Firmware variable.
+Deletes the named firmware variable.
 .SH EXAMPLES
 .LP
 .RS
