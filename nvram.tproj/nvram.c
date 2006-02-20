@@ -67,7 +67,7 @@ int main(int argc, char **argv)
   
   gOptionsRef = IORegistryEntryFromPath(masterPort, "IODeviceTree:/options");
   if (gOptionsRef == 0) {
-    FatalError(-1, "Error (%d) getting a reference to /options", -1);
+    FatalError(-1, "nvram is not supported on this system.", -1);
     exit(-1);
   }
   
@@ -575,3 +575,4 @@ static CFTypeRef ConvertValueToCFTypeRef(CFTypeID typeID, char *value)
   
   return valueRef;
 }
+

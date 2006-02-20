@@ -23,7 +23,7 @@
  */
 
 /*
-cc -I. -DKERNEL_PRIVATE -O -o sc_usage sc_usage.c -lncurses
+cc -I. -DPRIVATE -D__APPLE_PRIVATE -O -o sc_usage sc_usage.c -lncurses
 */
 
 #define	Default_DELAY	1	/* default delay interval */
@@ -90,9 +90,9 @@ long   start_time = 0;
 #define MAX_NESTED  8
 #define MAX_FAULTS  5
 
-/* If NUMPARMS from kernel changes, it will be reflected in PATHLENGTH as well */
+
 #define NUMPARMS 23
-#define PATHLENGTH (NUMPARMS*sizeof(long))
+
 
 char *state_name[] = {
         "Dont Know",
@@ -124,7 +124,7 @@ struct th_info {
         int  vfslookup;
         int  curpri;
         long *pathptr;
-        char pathname[PATHLENGTH + 1];
+        long pathname[NUMPARMS + 1];
         struct entry th_entry[MAX_NESTED];
 };
 
@@ -842,6 +842,7 @@ void screen_update()
 		
 	for (i = 0; i < num_of_threads; i++, ti++) {
 	        struct entry *te;
+		char 	*p;
 		uint64_t now;
 		int      secs, time_secs, time_usecs;
 
@@ -869,12 +870,14 @@ void screen_update()
 		clen = strlen(tbuf);
 		
 		/* print the tail end of the pathname */
-		plen = strlen(ti->pathname);
+		p = (char *)ti->pathname;
+
+		plen = strlen(p);
 		if (plen > 34)
 		  plen -= 34;
 		else
 		  plen = 0;
-		sprintf(&tbuf[clen], "   %-34.34s ", &ti->pathname[plen]);
+		sprintf(&tbuf[clen], "   %-34.34s ", &p[plen]);
 
 		clen += strlen(&tbuf[clen]);
 
@@ -1178,7 +1181,7 @@ sort_scalls() {
 			        if ((unsigned long)(((double)now - te->otime) / divisor) > 5000000) {
 				        ti->thread = 0;
 					ti->vfslookup = 0;
-					ti->pathptr = (long *)0;
+					ti->pathptr = (long *)NULL;
 					ti->pathname[0] = 0;
 					num_of_threads--;
 				}
@@ -1381,7 +1384,7 @@ sample_sc()
 		        th_state[i].depth = 0;
 			th_state[i].thread = 0;
 			th_state[i].vfslookup = 0;
-			th_state[i].pathptr = (long *)0;
+			th_state[i].pathptr = (long *)NULL;
 			th_state[i].pathname[0] = 0;
 		}
 		num_of_threads = 0;
@@ -1422,12 +1425,16 @@ sample_sc()
 
 		        if (ti->vfslookup == 1) {
 			        ti->vfslookup++;
-				memset(&ti->pathname[0], 0, (PATHLENGTH + 1));
-			        sargptr = (long *)&ti->pathname[0];
+			        sargptr = ti->pathname;
 
 				*sargptr++ = kd[i].arg2;
 				*sargptr++ = kd[i].arg3;
 				*sargptr++ = kd[i].arg4;
+				/*
+				 * NULL terminate the 'string'
+				 */
+				*sargptr = 0;
+
 				ti->pathptr = sargptr;
 
 			} else if (ti->vfslookup > 1) {
@@ -1440,7 +1447,7 @@ sample_sc()
 				  handle.
 				*/
 
-				if ((long *)sargptr >= (long *)&ti->pathname[PATHLENGTH])
+				if (sargptr >= &ti->pathname[NUMPARMS])
 					continue;
 
 				/*
@@ -1452,7 +1459,7 @@ sample_sc()
 
 				if (debugid & DBG_FUNC_START)
 				  {
-				    (long *)ti->pathptr = (long *)&ti->pathname[PATHLENGTH];
+				    ti->pathptr = &ti->pathname[NUMPARMS];
 				    continue;
 				  }
 
@@ -1460,6 +1467,11 @@ sample_sc()
 				*sargptr++ = kd[i].arg2;
 				*sargptr++ = kd[i].arg3;
 				*sargptr++ = kd[i].arg4;
+				/*
+				 * NULL terminate the 'string'
+				 */
+				*sargptr = 0;
+
 				ti->pathptr = sargptr;
 			}
 			continue;

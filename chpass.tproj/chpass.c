@@ -153,6 +153,17 @@ main(argc, argv)
 			usage();
 		}
 
+		/* getpwnam(3) returns a pointer to local storage */
+		lpw = *pw;
+		PWSETFIELD(pw_name, pw, lpw);
+		PWSETFIELD(pw_passwd, pw, lpw);
+		PWSETFIELD(pw_class, pw, lpw);
+		PWSETFIELD(pw_gecos, pw, lpw);
+		PWSETFIELD(pw_dir, pw, lpw);
+		PWSETFIELD(pw_shell, pw, lpw);
+
+		pw = &lpw;
+
 #ifdef DIRECTORY_SERVICE
 		if ((dswhere = wherepwent(pw->pw_name)) < 0) {
 			if(dswhere > E_NOTFOUND)

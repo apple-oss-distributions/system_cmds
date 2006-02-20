@@ -88,6 +88,8 @@ char *lookup_name();
 #define PATHLENGTH (NUMPARMS*sizeof(long))
 #define MAXCOLS 131
 #define MAX_WIDE_MODE_COLS (PATHLENGTH + 80)
+#define MAXWIDTH MAX_WIDE_MODE_COLS + 64
+
 
 struct th_info {
         int  in_filemgr;
@@ -102,7 +104,7 @@ struct th_info {
         int  waited;
         double stime;
         long *pathptr;
-        char pathname[PATHLENGTH + 1];   /* add room for null terminator */
+        long pathname[NUMPARMS + 1];   /* add room for null terminator */
 };
 
 #define MAX_THREADS 512
@@ -483,8 +485,12 @@ void get_screenwidth()
 	columns = MAXCOLS;
 
 	if (isatty(1)) {
-	        if (ioctl(1, TIOCGWINSZ, &size) != -1)
+	        if (ioctl(1, TIOCGWINSZ, &size) != -1) {
 		        columns = size.ws_col;
+
+			if (columns > MAXWIDTH)
+			       columns = MAXWIDTH;
+		}
 	}
 }
 
@@ -922,7 +928,7 @@ sample_sc()
 	        for (i = 0; i < cur_max; i++) {
 			th_state[i].thread = 0;
 			th_state[i].pid = 0;
-			th_state[i].pathptr = (long *)0;
+			th_state[i].pathptr = (long *)NULL;
 			th_state[i].pathname[0] = 0;
 		}
 		cur_max = 0;
@@ -1079,11 +1085,15 @@ sample_sc()
 		            continue;
 
 		    if (!ti->pathptr) {
-			    sargptr = (long *)&ti->pathname[0];
-			    memset(&ti->pathname[0], 0, (PATHLENGTH + 1));
+			    sargptr = ti->pathname;
 			    *sargptr++ = kd[i].arg2;
 			    *sargptr++ = kd[i].arg3;
 			    *sargptr++ = kd[i].arg4;
+			    /*
+			     * NULL terminate the 'string'
+			     */
+			    *sargptr = 0;
+
 			    ti->pathptr = sargptr;
 		    } else {
 		            sargptr = ti->pathptr;
@@ -1093,8 +1103,7 @@ sample_sc()
 			       kernel sends us more VFS_LOOKUP entries than we can
 			       handle.
 			    */
-
-			    if ((long *)sargptr >= (long *)&ti->pathname[PATHLENGTH]) {
+			    if (sargptr >= &ti->pathname[NUMPARMS]) {
 				continue;
 			    }
                             /*
@@ -1105,14 +1114,18 @@ sample_sc()
 			    */
 
 			    if (debugid & DBG_FUNC_START) {
-				(long *)ti->pathptr = (long *)&ti->pathname[PATHLENGTH];
+				ti->pathptr = &ti->pathname[NUMPARMS];
 				continue;
 			    }
-
 			    *sargptr++ = kd[i].arg1;
 			    *sargptr++ = kd[i].arg2;
 			    *sargptr++ = kd[i].arg3;
 			    *sargptr++ = kd[i].arg4;
+			    /*
+			     * NULL terminate the 'string'
+			     */
+			    *sargptr = 0;
+
 			    ti->pathptr = sargptr;
 		    }
 		    continue;
@@ -1946,7 +1959,7 @@ enter_syscall(int thread, int type, kd_buf *kd, char *name, double now)
        int tsclen = 0;
        int nmclen = 0;
        int argsclen = 0;
-       char buf[MAXCOLS];
+       char buf[MAXWIDTH];
 
        switch (type) {
 
@@ -2196,7 +2209,7 @@ enter_syscall(int thread, int type, kd_buf *kd, char *name, double now)
 	   ti->arg2   = kd->arg2;
 	   ti->arg3   = kd->arg3;
 	   ti->arg4   = kd->arg4;
-	   ti->pathptr = (long *)0;
+	   ti->pathptr = (long *)NULL;
 	   ti->pathname[0] = 0;
 	   break;
 
@@ -2251,7 +2264,7 @@ exit_syscall(char *sc_name, int thread, int type, int error, int retval,
         return;
 
     if (check_filter_mode(ti, type, error, retval, sc_name))
-	format_print(ti, sc_name, thread, type, error, retval, has_fd, has_ret, now, ti->stime, ti->waited, ti->pathname, NULL);
+	format_print(ti, sc_name, thread, type, error, retval, has_fd, has_ret, now, ti->stime, ti->waited, (char *)ti->pathname, NULL);
 
     if (ti == &th_state[cur_max - 1])
         cur_max--;
@@ -2275,7 +2288,7 @@ format_print(struct th_info *ti, char *sc_name, int thread, int type, int error,
        int len = 0;
        int clen = 0;
        char *framework_name;
-       char buf[MAXCOLS];
+       char buf[MAXWIDTH];
       
        command_name = "";
        

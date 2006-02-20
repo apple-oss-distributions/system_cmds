@@ -933,10 +933,10 @@
 0x40c05bc       BSC_#367
 0x40c05c0       BSC_#368
 0x40c05c4       BSC_#369
-0x50b0018  	IES_action
-0x50b001c  	IES_filter
-0x50c0010 	TES_action
-0x50d0018 	CQ_action
+0x5020018  	IES_action
+0x502001c  	IES_filter
+0x5030010 	TES_action
+0x5040018 	CQ_action
 0x5100004	PM_SetParent
 0x5100008	PM_AddChild
 0x510000c	PM_RemoveChild

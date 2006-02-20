@@ -114,8 +114,11 @@ int main(int argc, char *argv[])
 			hi.max_cpus);
 	else
 		printf("Kernel configured for a single processor only.\n");
-	printf("%d processor%s physically available.\n", hi.avail_cpus,
-		(hi.avail_cpus > 1) ? "s are" : " is");
+	printf("%d processor%s physically available.\n", hi.physical_cpu,
+		(hi.physical_cpu > 1) ? "s are" : " is");
+
+	printf("%d processor%s logically available.\n", hi.logical_cpu,
+		(hi.logical_cpu > 1) ? "s are" : " is");
 
 	printf("Processor type:");
 	slot_name(hi.cpu_type, hi.cpu_subtype, &cpu_name, &cpu_subname);
