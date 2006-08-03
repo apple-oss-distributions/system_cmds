@@ -15,9 +15,10 @@ PROJECT_TYPE = Tool
 HFILES = pathnames.h
 
 CFILES = shutdown.c
+DEFSFILES = kextmanager.defs
 
 OTHERSRCS = Makefile.preamble Makefile Makefile.postamble Makefile.dist\
-            shutdown.8
+            shutdown.8 $(DEFSFILES)
 
 
 MAKEFILEDIR = $(MAKEFILEPATH)/pb_makefiles

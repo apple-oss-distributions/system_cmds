@@ -65,6 +65,13 @@ static const char rcsid[] =
 #include <bsm/libbsm.h>
 #include <bsm/audit_uevents.h>
 
+#ifdef __APPLE__
+#include "kextmanager.h"
+#include <IOKit/kext/kextmanager_types.h>
+#include <mach/mach_port.h>		// allocate
+#include <mach/mach.h>			// task_self, etc
+#include <servers/bootstrap.h>	// bootstrap
+#endif
 
 #include "pathnames.h"
 
@@ -102,7 +109,7 @@ struct interval {
 #undef S
 
 static time_t offset, shuttime;
-static int dohalt, dopower, doreboot, killflg, mbuflen, oflag = 1;
+static int dohalt, dopower, doreboot, doups, killflg, mbuflen, oflag = 1;
 static char mbuf[BUFSIZ];
 static const char *nosync, *whom;
 
@@ -120,6 +127,9 @@ void timeout(int);
 void timewarn(int);
 void usage(const char *);
 int audit_shutdown(int);
+#ifdef __APPLE__
+int reserve_reboot(void);
+#endif
 
 int
 main(argc, argv)
@@ -139,7 +149,7 @@ main(argc, argv)
 #ifndef __APPLE__
 	while ((ch = getopt(argc, argv, "-hknopr")) != -1)
 #else
-	while ((ch = getopt(argc, argv, "-hknor")) != -1)
+	while ((ch = getopt(argc, argv, "-hknoru")) != -1)
 #endif
 		switch (ch) {
 		case '-':
@@ -150,6 +160,7 @@ main(argc, argv)
 			break;
 		case 'k':
 			killflg = 1;
+			oflag = 0;
 			break;
 		case 'n':
 			nosync = "-n";
@@ -162,6 +173,9 @@ main(argc, argv)
 			dopower = 1;
 			break;
 #endif
+        case 'u':
+            doups = 1;
+            break;
 		case 'r':
 			doreboot = 1;
 			break;
@@ -187,6 +201,9 @@ main(argc, argv)
 
 	if (oflag && !(dohalt || doreboot))
 		usage("-o requires -h or -r");
+		
+	if (doups && !dohalt)
+		usage("-u requires -h");
 #endif
 
 	if (nosync != NULL && !oflag)
@@ -378,13 +395,18 @@ die_you_gravy_sucking_pig_dog()
 {
 	char *empty_environ[] = { NULL };
 
-	syslog(LOG_NOTICE, "%s by %s: %s",
+#ifdef __APPLE__
+	if ((errno = reserve_reboot()))
+		err(1, "couldn't lock for reboot");
+#endif
+
+	syslog(LOG_NOTICE, "%s%s by %s: %s",
 #ifndef __APPLE__
 	    doreboot ? "reboot" : dohalt ? "halt" : dopower ? "power-down" : 
 #else
 	    doreboot ? "reboot" : dohalt ? "halt" : 
 #endif
-	    "shutdown", whom, mbuf);
+	    "shutdown", doups?"with UPS delay":"", whom, mbuf);
 #ifndef __APPLE__
 	(void)sleep(2);
 #endif
@@ -433,7 +455,13 @@ die_you_gravy_sucking_pig_dog()
 			warn(_PATH_REBOOT);
 		}
 		else if (dohalt) {
-			execle(_PATH_HALT, "halt", "-l", nosync,
+			char *halt_args;
+			if(doups) {
+				halt_args = "-lu";
+			} else { 
+				halt_args = "-l";
+			}
+			execle(_PATH_HALT, "halt", halt_args, nosync,
 				(char *)NULL, empty_environ);
 			syslog(LOG_ERR, "shutdown: can't exec %s: %m.",
 				_PATH_HALT);
@@ -588,7 +616,7 @@ usage(cp)
 	if (cp != NULL)
 		warnx("%s", cp);
 	(void)fprintf(stderr,
-	    "usage: shutdown [-] [-h | -p | -r | -k] [-o [-n]]"
+	    "usage: shutdown [-] [-h [-u] | -r | -k] [-o [-n]]"
 	    " time [warning-message ...]\n");
 	exit(1);
 }
@@ -638,3 +666,69 @@ int audit_shutdown(int exitstatus)
 	}
 	return 1;
 }
+
+
+#ifdef __APPLE__
+// XX copied from reboot.c; would be nice to share the code
+
+#define LCK_MAXTRIES 10
+#define LCK_DELAY	 30
+/*
+ * contact kextd to lock for reboot
+ */
+int
+reserve_reboot()
+{
+	int rval = ELAST+1;
+	kern_return_t macherr = KERN_FAILURE;
+	mach_port_t tport, bsport, kxport, myport = MACH_PORT_NULL;
+	int busyStatus, nretries = LCK_MAXTRIES;
+	dev_path_t busyDev = "<unknown>";
+
+	// find kextd
+	tport = mach_task_self();
+	if (tport == MACH_PORT_NULL)  goto finish;
+	macherr = task_get_bootstrap_port(tport, &bsport);
+	if (macherr)  goto finish;
+	macherr = bootstrap_look_up(bsport, KEXTD_SERVER_NAME, &kxport);
+	if (macherr)  goto finish;
+
+	// allocate a port to pass to kextd (in case we die)
+	macherr = mach_port_allocate(tport, MACH_PORT_RIGHT_RECEIVE, &myport);
+	if (macherr)  goto finish;
+
+	// loop trying to lock for reboot (i.e. no volumes are busy)
+	do {
+		nretries--;
+		macherr = kextmanager_lock_reboot(kxport, myport, busyDev, &busyStatus);
+		if (macherr)  goto finish;
+
+		if (busyStatus == EBUSY) {
+			if (*busyDev) {
+				warnx("%s is busy updating; delaying reboot (%d retries left)",
+						busyDev, nretries);
+			} else
+				warnx("kextd still starting up");
+			if (nretries)		sleep(LCK_DELAY);	// don't sleep the last time
+		}
+	} while (busyStatus == EBUSY && nretries > 0);
+
+	rval = busyStatus;
+
+finish:
+	if (macherr == BOOTSTRAP_UNKNOWN_SERVICE) {
+		mach_port_mod_refs(tport, myport, MACH_PORT_RIGHT_RECEIVE, -1);
+		rval = 0;
+	} else if (macherr) {
+		warnx("couldn't lock kext manager for reboot: %s",
+				mach_error_string(macherr));
+		rval = ELAST + 1;
+	}
+	if (rval && myport != MACH_PORT_NULL) {
+		mach_port_mod_refs(tport, myport, MACH_PORT_RIGHT_RECEIVE, -1);
+	}
+
+	return rval;
+}
+#endif
+

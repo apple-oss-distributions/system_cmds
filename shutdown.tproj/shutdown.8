@@ -42,7 +42,9 @@
 .Nm
 .Op Fl
 .Oo
-.Fl h | 
+.Fl h 
+.Op Fl u
+|
 .Fl r | Fl k
 .Oc
 .Oo
@@ -75,9 +77,8 @@ option
 does not actually halt the system, but leaves the
 system multi-user with logins disabled (for all but super-user).
 .It Fl o
-If one of the
-.Fl h ,
-.Fl p
+If 
+.Fl h
 or
 .Fl r
 is specified,
@@ -98,6 +99,12 @@ option to
 or
 .Xr reboot 8 .
 This option should probably not be used.
+.It Fl u
+The system is halted up until the point of removing system power, but waits 
+before removing power for 5 minutes so that an external UPS 
+(uninterruptible power supply) can forcibly remove power. 
+This simulates a dirty shutdown to permit a later automatic power on. OS X uses
+this mode automatically with supported UPSs in emergency shutdowns.
 .It Ar time
 .Ar Time
 is the time at which

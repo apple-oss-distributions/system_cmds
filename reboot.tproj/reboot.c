@@ -60,8 +60,19 @@ static const char rcsid[] =
 #include <string.h>
 #include <unistd.h>
 
+#ifdef __APPLE__
+#include "kextmanager.h"
+#include <IOKit/kext/kextmanager_types.h>
+#include <mach/mach_port.h>		// allocate
+#include <mach/mach.h>			// task_self, etc
+#include <servers/bootstrap.h>	// bootstrap
+#endif
+
 void usage(void);
 u_int get_pageins(void);
+#ifdef __APPLE__
+int reserve_reboot(void);
+#endif
 
 int dohalt;
 
@@ -69,7 +80,7 @@ int
 main(int argc, char *argv[])
 {
 	struct passwd *pw;
-	int ch, howto, i, fd, kflag, lflag, nflag, qflag, pflag, sverrno;
+	int ch, howto, i, fd, kflag, lflag, nflag, qflag, pflag, uflag, sverrno;
 	u_int pageins;
 	char *kernel, *p;
 	const char *user;
@@ -83,7 +94,7 @@ main(int argc, char *argv[])
 #ifndef __APPLE__
 	while ((ch = getopt(argc, argv, "dk:lnpq")) != -1)
 #else
-	while ((ch = getopt(argc, argv, "lnq")) != -1)
+	while ((ch = getopt(argc, argv, "lnqu")) != -1)
 #endif
 		switch(ch) {
 #ifndef __APPLE__
@@ -109,6 +120,10 @@ main(int argc, char *argv[])
 			howto |= RB_POWEROFF;
 			break;
 #endif
+		case 'u':
+			uflag = 1;
+			howto |= RB_UPSDELAY;
+			break;
 		case 'q':
 			qflag = 1;
 			break;
@@ -127,6 +142,13 @@ main(int argc, char *argv[])
 		errno = EPERM;
 		err(1, NULL);
 	}
+
+#ifdef __APPLE__
+	if (!lflag) {	// shutdown(8) has already checked w/kextd
+		if ((errno = reserve_reboot()) && !qflag)
+			err(1, "couldn't lock for reboot");
+	}
+#endif
 
 	if (qflag) {
 		reboot(howto);
@@ -153,7 +175,8 @@ main(int argc, char *argv[])
 			    pw->pw_name : "???";
 		if (dohalt) {
 			openlog("halt", 0, LOG_AUTH | LOG_CONS);
-			syslog(LOG_CRIT, "halted by %s", user);
+			syslog(LOG_CRIT, "halted by %s%s", user, 
+			     (howto & RB_UPSDELAY) ? " with UPS delay":"");
 		} else {
 			openlog("reboot", 0, LOG_AUTH | LOG_CONS);
 			syslog(LOG_CRIT, "rebooted by %s", user);
@@ -216,7 +239,9 @@ main(int argc, char *argv[])
 	reboot(howto);
 	/* FALLTHROUGH */
 
+#ifndef __APPLE__
 restart:
+#endif
 	sverrno = errno;
 	errx(1, "%s%s", kill(1, SIGHUP) == -1 ? "(can't restart init): " : "",
 	    strerror(sverrno));
@@ -249,3 +274,67 @@ get_pageins()
 	}
 	return pageins;
 }
+
+#ifdef __APPLE__
+// XX another copy of this routine is in shutdown.c; it would be nice to share
+
+#define LCK_MAXTRIES 10
+#define LCK_DELAY	 30
+/*
+ * contact kextd to lock for reboot
+ */
+int
+reserve_reboot()
+{
+	int rval = ELAST+1;
+	kern_return_t macherr = KERN_FAILURE;
+	mach_port_t tport, bsport, kxport, myport = MACH_PORT_NULL;
+	int busyStatus, nretries = LCK_MAXTRIES;
+	dev_path_t busyDev = "<unknown>";
+
+	// find kextd
+	tport = mach_task_self();
+	if (tport == MACH_PORT_NULL)  goto finish;
+	macherr = task_get_bootstrap_port(tport, &bsport);
+	if (macherr)  goto finish;
+	macherr = bootstrap_look_up(bsport, KEXTD_SERVER_NAME, &kxport);
+	if (macherr)  goto finish;
+
+	// allocate a port to pass to kextd (in case we die)
+	macherr = mach_port_allocate(tport, MACH_PORT_RIGHT_RECEIVE, &myport);
+	if (macherr)  goto finish;
+
+	// loop trying to lock for reboot (i.e. no volumes are busy)
+	do {
+		nretries--;
+		macherr = kextmanager_lock_reboot(kxport, myport, busyDev, &busyStatus);
+		if (macherr)  goto finish;
+
+		if (busyStatus == EBUSY) {
+			if (*busyDev) {
+				warnx("%s is busy updating; delaying reboot (%d retries left)",
+						busyDev, nretries);
+			} else
+				warnx("kextd still starting up");
+			if (nretries)		sleep(LCK_DELAY);	// don't sleep the last time
+		}
+	} while (busyStatus == EBUSY && nretries > 0);
+
+	rval = busyStatus;
+
+finish:
+	if (macherr == BOOTSTRAP_UNKNOWN_SERVICE) {
+		mach_port_mod_refs(tport, myport, MACH_PORT_RIGHT_RECEIVE, -1);
+		rval = 0;
+	} else if (macherr) {
+		warnx("couldn't lock kext manager for reboot: %s",
+				mach_error_string(macherr));
+		rval = ELAST + 1;
+	}
+	if (rval && myport != MACH_PORT_NULL) {
+		mach_port_mod_refs(tport, myport, MACH_PORT_RIGHT_RECEIVE, -1);
+	}
+
+	return rval;
+}
+#endif

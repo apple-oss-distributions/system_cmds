@@ -41,7 +41,7 @@
 .Nd stopping and restarting the system
 .Sh SYNOPSIS
 .Nm halt
-.Op Fl lnq
+.Op Fl lnqu
 .Nm
 .Op Fl lnq
 .Sh DESCRIPTION
@@ -83,6 +83,12 @@ the flushing of the file system cache is performed (if the
 .Fl n
 option is not specified).
 This option should probably not be used.
+.It Fl u
+The system is halted up until the point of removing system power, but waits 
+before removing power for 5 minutes so that an external UPS 
+(uninterruptible power supply) can forcibly remove power. 
+This simulates a dirty shutdown to permit a later automatic power on. OS X uses
+this mode automatically with supported UPSs in emergency shutdowns.
 .El
 .Pp
 Normally, the
