@@ -48,15 +48,15 @@ static const char rcsid[] =
 #include <syslog.h>
 #include <time.h>
 #include <unistd.h>
-#include <utmp.h>
+#include <utmpx.h>
 #if 1
 #include <paths.h>
 #else
 #include <getopt.h>
 #endif
 
-#if (MAXLOGNAME-1) > UT_NAMESIZE
-#define LOGNAMESIZE UT_NAMESIZE
+#if (MAXLOGNAME-1) > _UTX_USERSIZE
+#define LOGNAMESIZE _UTX_USERSIZE
 #else
 #define LOGNAMESIZE (MAXLOGNAME-1)
 #endif
@@ -119,7 +119,8 @@ run_file(const char *filename, uid_t uid, gid_t gid)
     pid_t pid;
     int fd_out, fd_in;
     int queue;
-    char mailbuf[LOGNAMESIZE + 1], fmt[49];
+    char mailbuf[LOGNAMESIZE + 1];
+    char *fmt = NULL;
     char *mailname = NULL;
     FILE *stream;
     int send_mail = 0;
@@ -146,6 +147,13 @@ run_file(const char *filename, uid_t uid, gid_t gid)
     
     else if (pid != 0)
 	return;
+
+#ifdef __APPLE__
+    {
+	pid_t pg = setsid();
+	if (pg == -1) syslog(LOG_ERR,"setsid() failed: %m");
+    }
+#endif
 
     /* Let's see who we mail to.  Hopefully, we can read it from
      * the command file; if not, send it to the owner, or, failing that,
@@ -208,13 +216,15 @@ run_file(const char *filename, uid_t uid, gid_t gid)
 
     fcntl(fd_in, F_SETFD, fflags & ~FD_CLOEXEC);
 
-    snprintf(fmt, sizeof(fmt),
-	"#!/bin/sh\n# atrun uid=%%ld gid=%%ld\n# mail %%%ds %%d",
-                          LOGNAMESIZE);
+    asprintf(&fmt, "%s%d%s",
+	     "#!/bin/sh\n# atrun uid=%ld gid=%ld\n# mail %",
+	     LOGNAMESIZE,
+	     "s %d");
     if (fscanf(stream, fmt, &nuid, &ngid, mailbuf, &send_mail) != 4) {
 	syslog(LOG_ERR,"File %s is in wrong format - aborting", filename);
 	exit(EXIT_FAILURE);
     }
+    free(fmt);
     if (mailbuf[0] == '-') {
 	syslog(LOG_ERR,"illegal mail name %s in %s",mailbuf,filename);
 	exit(EXIT_FAILURE);
@@ -287,11 +297,11 @@ run_file(const char *filename, uid_t uid, gid_t gid)
 
         nice(tolower(queue) - 'a');
 	
-	if (initgroups(pentry->pw_name,pentry->pw_gid))
-	    perr("cannot delete saved userids");
-
 	if (setgid(gid) < 0 || setegid(pentry->pw_gid) < 0)
 	    perr("cannot change group");
+
+	if (initgroups(pentry->pw_name,pentry->pw_gid))
+	    perr("cannot delete saved userids");
 
 	if (setlogin(pentry->pw_name))
 	    perr("cannot set login name");
@@ -325,11 +335,11 @@ run_file(const char *filename, uid_t uid, gid_t gid)
     {    
 	PRIV_START
 
-	if (initgroups(pentry->pw_name,pentry->pw_gid))
-	    perr("cannot delete saved userids");
-
 	if (setgid(gid) < 0 || setegid(pentry->pw_gid) < 0)
 	    perr("cannot change group");
+
+	if (initgroups(pentry->pw_name,pentry->pw_gid))
+	    perr("cannot delete saved userids");
 
 	if (setlogin(pentry->pw_name))
 	    perr("cannot set login name");
@@ -486,6 +496,10 @@ main(int argc, char *argv[])
 	run_file(batch_name, batch_uid, batch_gid);
 
     closelog();
+#if __APPLE__
+    // allow enough time for child processes to call setsid(2)
+    sleep(1);
+#endif
     exit(EXIT_SUCCESS);
 }
 
