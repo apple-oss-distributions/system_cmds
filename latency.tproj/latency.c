@@ -54,6 +54,8 @@
 #include <sys/kdebug.h>
 #endif /*KERNEL_PRIVATE*/
 
+#include <libutil.h>
+
 #include <sys/sysctl.h>
 #include <errno.h>
 #include <err.h>
@@ -106,6 +108,11 @@ int      my_policy;
 int      my_pri = -1;
 int      num_of_usecs_to_sleep = 1000;
 
+#define N_HIGH_RES_BINS 500
+int      use_high_res_bins = false;
+int      i_high_res_bins[N_HIGH_RES_BINS];
+int      i_highest_latency = 0;
+
 char *kernelpath = (char *)0;
 char *code_file = (char *)0;
 
@@ -152,9 +159,9 @@ struct ct {
 #define NUMPARMS 23
 
 struct th_info {
-        int  thread;
+        uintptr_t  thread;
         int  type;
-        int  child_thread;
+        uintptr_t  child_thread;
         int  arg1;
         double stime;
         long *pathptr;
@@ -187,19 +194,19 @@ int  cur_max = 0;
 #define DBG_FUNC_ALL	(DBG_FUNC_START | DBG_FUNC_END)
 #define DBG_FUNC_MASK	0xfffffffc
 
-#define CPU_NUMBER(ts)	((ts & KDBG_CPU_MASK) >> KDBG_CPU_SHIFT)
+#define CPU_NUMBER(kp)	kdbg_get_cpu(kp)
 
-#define DBG_ZERO_FILL_FAULT   1
-#define DBG_PAGEIN_FAULT      2
-#define DBG_COW_FAULT         3
-#define DBG_CACHE_HIT_FAULT   4
 
-char *fault_name[5] = {
+char *fault_name[9] = {
         "",
 	"ZeroFill",
 	"PageIn",
 	"COW",
 	"CacheHit",
+	"NoZeroFill",
+	"Guard",
+	"PageInFile",
+	"PageInAnon"
 };
 
 char *pc_to_string();
@@ -425,6 +432,21 @@ set_init_logging()
 	        quit("trace facility failure, KERN_KDSETUP\n");
 }
 
+void
+write_high_res_latencies()
+{
+    int i;
+    FILE *f;
+    if(use_high_res_bins)
+    {
+        f = fopen("latencies.csv","w");
+        for(i=0;i<N_HIGH_RES_BINS;i++)
+        {
+            fprintf(f,"%d,%d\n", i, i_high_res_bins[i]);
+        }
+        fclose(f);
+    }
+}
 
 void sigwinch()
 {
@@ -434,6 +456,8 @@ void sigwinch()
 void sigintr()
 {
         void screen_update();
+
+        write_high_res_latencies();
 
         set_enable(0);
 	set_pidexclude(getpid(), 0);
@@ -447,6 +471,8 @@ void sigintr()
 
 void leave()    /* exit under normal conditions -- signal handler */
 {
+        write_high_res_latencies();
+
         set_enable(0);
 	set_pidexclude(getpid(), 0);
 	endwin();
@@ -496,7 +522,41 @@ screen_update(FILE *fp)
 	else
 	        printw(tbuf);
 
+	if (use_high_res_bins) {
+		sprintf(tbuf, "INTERRUPTS(HIGH RESOLUTION)\n");
 
+		if (fp)
+			fprintf(fp, "%s", tbuf);
+		else
+			printw(tbuf);
+	}
+    if(use_high_res_bins)
+    {
+        for(i=0;i<N_HIGH_RES_BINS;i++) {
+            if(i && !(i%10)) {
+                sprintf(tbuf,"\n");
+                if (fp)
+                    fprintf(fp, "%s", tbuf);
+                else
+                    printw(tbuf);
+            }
+#define INDEX(i) ((i%10)*50 + (i/10))
+            if(INDEX(i) <= i_highest_latency)
+                sprintf(tbuf,"[%3d]: %6d ", INDEX(i), i_high_res_bins[INDEX(i)]);
+            else
+                tbuf[0] = '\0';
+
+            if (fp)
+                fprintf(fp, "%s", tbuf);
+            else
+                printw(tbuf);
+        }
+        sprintf(tbuf,"\n\n");
+        if (fp)
+            fprintf(fp, "%s", tbuf);
+        else
+            printw(tbuf);
+    }
 
 	sprintf(tbuf, "                     SCHEDULER     INTERRUPTS\n");
 
@@ -662,7 +722,7 @@ int
 exit_usage()
 {
 
-        fprintf(stderr, "Usage: latency [-rt] [-c codefile] [-l logfile] [-st threshold]\n");
+        fprintf(stderr, "Usage: latency [-rt] [-h] [-c codefile] [-l logfile] [-st threshold]\n");
 
 #if defined (__i386__)
 	fprintf(stderr, "               [-it threshold] [-s sleep_in_usecs] [-n kernel]\n\n");	
@@ -673,6 +733,7 @@ exit_usage()
 
 
 	fprintf(stderr, "  -rt   Set realtime scheduling policy.  Default is timeshare.\n");
+	fprintf(stderr, "  -h    Display high resolution interrupt latencies and write them to latencies.csv (truncate existing file) upon exit.\n");
 	fprintf(stderr, "  -c    specify name of codes file\n");
 	fprintf(stderr, "  -l    specify name of file to log trace entries to when threshold is exceeded\n");
 	fprintf(stderr, "  -st   set scheduler latency threshold in microseconds... if latency exceeds this, then log trace\n");
@@ -690,9 +751,7 @@ exit_usage()
 
 
 int
-main(argc, argv)
-int  argc;
-char *argv[];
+main(int argc, char *argv[])
 {
 	uint64_t start, stop;
 	uint64_t timestamp1;
@@ -711,6 +770,11 @@ char *argv[];
 	void     init_code_file();
 	void     do_kernel_nm();
 	void     open_logfile();
+
+	if (0 != reexec_to_match_kernel()) {
+		fprintf(stderr, "Could not re-execute: %d\n", errno);
+		exit(1);
+	}
 
 	my_policy = THREAD_STANDARD_POLICY;
 	policy_name = "TIMESHARE";
@@ -784,6 +848,8 @@ char *argv[];
 			  kernelpath = argv[1];
 			else
 			  exit_usage();
+		} else if (strcmp(argv[1], "-h") == 0) {
+            use_high_res_bins = true;
 		} else
 		        exit_usage();
 
@@ -818,7 +884,7 @@ char *argv[];
             exit(EXIT_FAILURE);
 	}
 
-	if ((last_decrementer_kd = (kd_buf **)malloc(hi.avail_cpus * sizeof(kd_buf *))) == (kd_buf **)0)
+	if ((last_decrementer_kd = (kd_buf **)malloc(hi.max_cpus * sizeof(kd_buf *))) == (kd_buf **)0)
 	        quit("can't allocate memory for decrementer tracing info\n");
 
 	nanosecs_to_sleep = (double)(num_of_usecs_to_sleep * 1000);
@@ -1050,7 +1116,7 @@ void read_command_map()
 }
 
 
-void create_map_entry(int thread, char *command)
+void create_map_entry(uintptr_t thread, char *command)
 {
     int i, n;
     kd_threadmap *map;
@@ -1106,7 +1172,7 @@ void create_map_entry(int thread, char *command)
 }
 
 
-kd_threadmap *find_thread_map(int thread)
+kd_threadmap *find_thread_map(uintptr_t thread)
 {
     int i;
     kd_threadmap *map;
@@ -1126,7 +1192,7 @@ kd_threadmap *find_thread_map(int thread)
 }
 
 void
-kill_thread_map(int thread)
+kill_thread_map(uintptr_t thread)
 {
     kd_threadmap *map;
 
@@ -1143,7 +1209,7 @@ kill_thread_map(int thread)
 }
 
 
-struct th_info *find_thread(int thread, int type1, int type2) {
+struct th_info *find_thread(uintptr_t thread, int type1, int type2) {
        struct th_info *ti;
 
        for (ti = th_state; ti < &th_state[cur_max]; ti++) {
@@ -1238,7 +1304,7 @@ void sample_sc(uint64_t start, uint64_t stop)
 	end_of_sample = &((kd_buf *)my_buffer)[count];
 
 	/* Always reinitialize the DECR_TRAP array */
-	for (i=0; i < hi.avail_cpus; i++)
+	for (i=0; i < hi.max_cpus; i++)
 	      last_decrementer_kd[i] = (kd_buf *)my_buffer;
 
 	last_mach_sched = (kd_buf *)0;
@@ -1264,7 +1330,7 @@ void sample_sc(uint64_t start, uint64_t stop)
 		void print_entry();
 
 		thread  = kd->arg5;
-		cpunum	= CPU_NUMBER(kd->timestamp);
+		cpunum	= CPU_NUMBER(kd);
 		debugid = kd->debugid;
 		type    = kd->debugid & DBG_FUNC_MASK;
 
@@ -1293,7 +1359,7 @@ void sample_sc(uint64_t start, uint64_t stop)
 				}
 				if ((kd->debugid & DBG_FUNC_MASK) == DECR_TRAP)
 				  {
-				    cpunum = CPU_NUMBER(kd->timestamp);
+				    cpunum = CPU_NUMBER(kd);
 				    last_decrementer_kd[cpunum] = kd;
 				  }
 				else
@@ -1565,7 +1631,7 @@ enter_syscall(FILE *fp, kd_buf *kd, int thread, int type, char *command, double 
        int    cpunum;
        char  *p;
 
-       cpunum = CPU_NUMBER(kd->timestamp);
+       cpunum = CPU_NUMBER(kd);
 
        if (print_info && fp) {
 	       if ((p = find_code(type))) {
@@ -1636,7 +1702,7 @@ exit_syscall(FILE *fp, kd_buf *kd, int thread, int type, char *command, double t
        char   *p;
        uint64_t user_addr;
 
-       cpunum = CPU_NUMBER(kd->timestamp);
+       cpunum = CPU_NUMBER(kd);
 
        ti = find_thread(thread, type, type);
 #if 0
@@ -1652,10 +1718,10 @@ exit_syscall(FILE *fp, kd_buf *kd, int thread, int type, char *command, double t
 	       if ((p = find_code(type))) {
 		       if (type == INTERRUPT) {
 			       fprintf(fp, "INTERRUPT                                                               %-8x  %d  %s\n", thread, cpunum, command);
-		       } else if (type == MACH_vmfault && kd->arg4 <= DBG_CACHE_HIT_FAULT) {
+		       } else if (type == MACH_vmfault && kd->arg4 <= DBG_PAGEIND_FAULT) {
 			       user_addr = ((uint64_t)kd->arg1 << 32) | (uint32_t)kd->arg2;
 
-			       fprintf(fp, "%-28.28s %-8.8s   %-16qx                %-8x  %d  %s\n",
+			       fprintf(fp, "%-28.28s %-10.10s   %-16qx              %-8x  %d  %s\n",
 				       p, fault_name[kd->arg4], user_addr,
 				       thread, cpunum, command);
 		       } else {
@@ -1692,7 +1758,7 @@ print_entry(FILE *fp, kd_buf *kd, int thread, int type, char *command, double ti
        if (!fp)
 	 return;
 
-       cpunum = CPU_NUMBER(kd->timestamp);
+       cpunum = CPU_NUMBER(kd);
 #if 0
        fprintf(fp, "cur_max = %d, type = %x,  thread = %x, cpunum = %d\n", cur_max, type, thread, cpunum);
 #endif
@@ -1780,13 +1846,13 @@ kd_buf *log_decrementer(kd_buf *kd_beg, kd_buf *kd_end, kd_buf *end_of_sample, d
 	fprintf(log_fp, "RelTime(Us)  Delta              debugid                      arg1       arg2       arg3      arg4       thread   cpu   command\n\n");
 
 	thread = kd_beg->arg5;
-	cpunum = CPU_NUMBER(kd_end->timestamp);
+	cpunum = CPU_NUMBER(kd_end);
 
 	for (kd_count = 0, kd_start = kd_beg - 1; (kd_start >= (kd_buf *)my_buffer); kd_start--, kd_count++) {
 	        if (kd_count == MAX_LOG_COUNT)
 		        break;
 
-		if (CPU_NUMBER(kd_start->timestamp) != cpunum)
+		if (CPU_NUMBER(kd_start) != cpunum)
 		        continue;
 										     
 		if ((kd_start->debugid & DBG_FUNC_MASK) == DECR_TRAP)
@@ -1806,7 +1872,7 @@ kd_buf *log_decrementer(kd_buf *kd_beg, kd_buf *kd_end, kd_buf *end_of_sample, d
 		if ((kd_stop->debugid & DBG_FUNC_MASK) == DECR_TRAP)
 		        break;
 
-		if (CPU_NUMBER(kd_stop->timestamp) != cpunum)
+		if (CPU_NUMBER(kd_stop) != cpunum)
 		        continue;
 
 		if (kd_stop->arg5 != thread)
@@ -1831,7 +1897,7 @@ kd_buf *log_decrementer(kd_buf *kd_beg, kd_buf *kd_end, kd_buf *end_of_sample, d
 	        int    mode;
 
 	        thread  = kd->arg5;
-		cpunum	= CPU_NUMBER(kd->timestamp);
+		cpunum	= CPU_NUMBER(kd);
 		debugid = kd->debugid;
 		type    = kd->debugid & DBG_FUNC_MASK;
 
@@ -2029,13 +2095,13 @@ kd_buf *log_decrementer(kd_buf *kd_beg, kd_buf *kd_end, kd_buf *end_of_sample, d
 double handle_decrementer(kd_buf *kd)
 {
         double latency;
-	int    elapsed_usecs;
+	long   elapsed_usecs;
 
-	if ((int)(kd->arg1) >= 0)
+	if ((long)(kd->arg1) >= 0)
 	       latency = 1;
 	else
 	       latency = (((double)(-1 - kd->arg1)) / divisor);
-	elapsed_usecs = (int)latency;
+	elapsed_usecs = (long)latency;
 
 	if (elapsed_usecs < 100)
 	        i_usec_10_bins[elapsed_usecs/10]++;
@@ -2047,6 +2113,12 @@ double handle_decrementer(kd_buf *kd)
 	        i_msec_10_bins[elapsed_usecs/10000]++;
 	else 
 	        i_too_slow++;
+
+    if(use_high_res_bins && elapsed_usecs < N_HIGH_RES_BINS) {
+        if(elapsed_usecs > i_highest_latency)
+            i_highest_latency = elapsed_usecs;
+        i_high_res_bins[elapsed_usecs]++;
+    }
 
 	if (i_thresh_hold && elapsed_usecs > i_thresh_hold)
 	        i_exceeded_threshold++;
@@ -2064,7 +2136,7 @@ double handle_decrementer(kd_buf *kd)
 void init_code_file()
 {
         FILE *fp;
-	int   i, n, cnt, code;
+	int   i, n, code;
 	char name[128];
 
 	if ((fp = fopen(code_file, "r")) == (FILE *)0) {
@@ -2072,16 +2144,15 @@ void init_code_file()
 		        fprintf(log_fp, "open of %s failed\n", code_file);
 	        return;
 	}
-	n = fscanf(fp, "%d\n", &cnt);
-
-	if (n != 1) {
-	        if (log_fp)
-		        fprintf(log_fp, "bad format found in %s\n", code_file);
-	        return;
-	}
 	for (i = 0; i < MAX_ENTRIES; i++) {
 	        n = fscanf(fp, "%x%127s\n", &code, name);
 
+		if (n == 1 && i == 0) {
+			/*
+			 * old code file format, just skip
+			 */
+			continue;
+		}
 		if (n != 2)
 		        break;
 

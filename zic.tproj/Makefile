@@ -5,6 +5,9 @@ HFILES = private.h
 CFILES = ialloc.c scheck.c zic.c
 MANPAGES = zic.8
 
+Extra_CC_Flags = -Wall -Werror -mdynamic-no-pic
+Extra_LD_Flags = -dead_strip
+
 include $(MAKEFILEPATH)/CoreOS/ReleaseControl/BSDCommon.make
 
 LOCALTIME=	US/Pacific
@@ -28,7 +31,7 @@ ZONEINFO = $(DSTROOT)/usr/share/zoneinfo
 # the tzdata*.tar.gz file is automatically unpacked and a version file created
 # /usr/local/share/tz/tzdata*.tar.gz is installed by the TimeZoneData project
 DATFILES = $(OBJROOT)/datfiles
-TARBALL = $(shell echo /usr/local/share/tz/tzdata*)
+TARBALL = $(shell ls $(SDKROOT)/usr/local/share/tz/tzdata* | sort | tail -n 1)
 DATVERS = $(shell basename $(TARBALL) | sed -e 's,\..*,,' -e 's/^tzdata//')
 VERSIONFILE = $(ZONEINFO)/+VERSION
 
@@ -53,10 +56,12 @@ after_install:
 	$(INSTALL_FILE) $(DATFILES)/iso3166.tab $(ZONEINFO)
 ifeq "$(Embedded)" "YES"
 	$(INSTALL_DIRECTORY) $(DSTROOT)/private/var/db
-	$(LN) -hfs /usr/share/zoneinfo/$(LOCALTIME) $(DSTROOT)/private/var/db/localtime
+	$(INSTALL_DIRECTORY) -m a+rwx $(DSTROOT)/private/var/db/timezone
+	$(LN) -hfs /usr/share/zoneinfo/$(LOCALTIME) $(DSTROOT)/private/var/db/timezone/localtime
 else
 	$(INSTALL_DIRECTORY) $(DSTROOT)/private/etc
 	$(LN) -hfs /usr/share/zoneinfo/$(LOCALTIME) $(DSTROOT)/private/etc/localtime
 endif
+	$(RM) $(VERSIONFILE)
 	echo $(DATVERS) > $(VERSIONFILE)
 	chmod 444 $(VERSIONFILE)

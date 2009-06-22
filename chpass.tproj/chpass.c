@@ -281,7 +281,7 @@ main(int argc, char *argv[])
 						CFStringRef shell = CFStringCreateWithCString(NULL, arg, kCFStringEncodingUTF8);
 						if (shell) {
 							attrs = CFDictionaryCreateMutable(NULL, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
-							if (attrs) CFDictionarySetValue((CFMutableDictionaryRef)attrs, CFSTR(kDS1AttrUserShell), shell);
+							if (attrs) CFDictionarySetValue((CFMutableDictionaryRef)attrs, kODAttributeTypeUserShell, shell);
 							CFRelease(shell);
 						}
 					} else {
@@ -331,7 +331,7 @@ main(int argc, char *argv[])
 	if (op == EDITENTRY) {
 #ifdef OPEN_DIRECTORY
 		setrestricted(attrs_orig);
-		snprintf(tfn, sizeof(tfn), "/tmp/%s.XXXXXX", progname);
+		snprintf(tfn, sizeof(tfn), "/etc/%s.XXXXXX", progname);
 		if ((tfd = mkstemp(tfn)) == -1)
 			err(1, "%s", tfn);
 		attrs = (CFMutableDictionaryRef)edit(tfn, attrs_orig);

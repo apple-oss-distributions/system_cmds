@@ -1,4 +1,4 @@
-.\" Copyright (c) 1992, 1993
+.\" Copyright (c) 1993
 .\"	The Regents of the University of California.  All rights reserved.
 .\"
 .\" Redistribution and use in source and binary forms, with or without
@@ -9,10 +9,6 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. All advertising materials mentioning features or use of this software
-.\"    must display the following acknowledgement:
-.\"	This product includes software developed by the University of
-.\"	California, Berkeley and its contributors.
 .\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
@@ -29,61 +25,72 @@
 .\" OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 .\" SUCH DAMAGE.
 .\"
-.\"     @(#)boot_sparc.8	8.2 (Berkeley) 4/19/94
+.\"     @(#)nologin.8	8.1 (Berkeley) 6/19/93
+.\" $FreeBSD: src/usr.sbin/nologin/nologin.5,v 1.15 2007/05/10 11:22:24 yar Exp $
 .\"
-.Dd April 19, 1994
-.Dt REBOOT 8 sparc
+.Dd May 10, 2007
+.Dt NOLOGIN 5
 .Os
 .Sh NAME
-.Nm reboot
-.Nd
-.Tn UNIX
-bootstrapping procedures
-.Sh SYNOPSIS
-.Nm reboot
-.Op Fl n
-.Op Fl q
+.Nm nologin
+.Nd disallow logins
 .Sh DESCRIPTION
-.Sy Power fail and crash recovery.
-Normally, the system will reboot itself at power-up or after crashes.
-An automatic consistency check of the file systems will be performed
-as described in
-.Xr fsck 8 .
-and unless this fails, the system will resume multi-user operations.
+Programs such as
+.Xr login 1
+disallow logins if the
+.Nm
+file exists.
+The programs display the contents of
+.Nm
+to the user if possible and interrupt the login sequence.
+This makes it simple to temporarily prevent incoming logins systemwide.
 .Pp
-.Sy Cold starts
-The SPARC system currently uses the SunOS bootstrap loaders.
-This will be changed in a future version of the system.
-The SunOS boot will attempt to load
-.Pa vmunix
-from partition A of the boot device,
-which must currently be an ``sd'' disk.
+To disable logins on a per-account basis,
+investigate
+.Xr nologin 8 .
+.Sh SECURITY
+The
+.Nm
+file is ignored for user root by default.
+.Sh IMPLEMENTATION NOTES
+The
+.Nm
+feature is implemented through
+.Xr login.conf 5 ,
+which allows to change the pathname of the
+file and to extend the list of users
+exempt from temporary login restriction.
+.Pp
+PAM-aware programs can be selectively configured to respect
+.Nm
+using the
+.Xr pam_nologin 8
+module via
+.Xr pam.conf 5 .
 .Pp
 The
-.Op Fl s
-flag to the SunOS boot loader will being the system up in single-user mode.
-The
-.Op Fl d
-flag to the SunOS boot loader will bring the system up in debug mode.
-Here it waits for a kernel debugger connect; see
-.Xr kgdb 8 .
-Other flags are currently ignored.
+.Nm
+file will be removed at system boot if it resides in
+.Pa /var/run
+and
+.Va cleanvar_enable
+is set to
+.Dq Li YES
+in
+.Xr rc.conf 5 ,
+which is default.
+Therefore system reboot can effectively re-enable logins.
 .Sh FILES
-.Bl -tag -width /vmunixxx -compact
-.It Pa /vmunix
-system code
-.It Pa /boot
-system bootstrap
+.Bl -tag -width ".Pa /var/run/nologin" -compact
+.It Pa /var/run/nologin
+default location of
+.Nm
 .El
 .Sh SEE ALSO
-.Xr crash 8 ,
-.Xr disklabel 8 ,
-.Xr fsck 8 ,
-.Xr halt 8 ,
-.Xr init 8 ,
-.Xr rc 8 ,
-.Xr shutdown 8 ,
-.Xr syslogd 8
-.Sh BUGS
-The use of Sun disk labels, without the ability to write them,
-is problematic.
+.Xr login 1 ,
+.Xr login.conf 5 ,
+.Xr pam.conf 5 ,
+.Xr rc.conf 5 ,
+.Xr nologin 8 ,
+.Xr pam_nologin 8 ,
+.Xr shutdown 8

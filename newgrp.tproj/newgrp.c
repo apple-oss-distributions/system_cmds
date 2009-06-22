@@ -156,6 +156,7 @@ addgroup(const char *grpname)
 	struct group *grp;
 	char *ep, *pass;
 	char **p;
+	char *grp_passwd;
 
 	egid = getegid();
 
@@ -179,10 +180,13 @@ addgroup(const char *grpname)
 			dbmember = 1;
 			break;
 		}
-	if (!dbmember && *grp->gr_passwd != '\0' && getuid() != 0) {
+	grp_passwd = grp->gr_passwd;
+	if ((grp_passwd == NULL) || (grp_passwd[0] == '\0'))
+		grp_passwd = "*";
+	if (!dbmember && getuid() != 0) {
 		pass = getpass("Password:");
 		if (pass == NULL ||
-		    strcmp(grp->gr_passwd, crypt(pass, grp->gr_passwd)) != 0) {
+		    strcmp(grp_passwd, crypt(pass, grp_passwd)) != 0) {
 			fprintf(stderr, "Sorry\n");
 			return;
 		}
@@ -256,6 +260,7 @@ loginshell(void)
 {
 	char *args[2], **cleanenv, *term, *ticket;
 	const char *shell;
+	char *prog, progbuf[PATH_MAX];
 #ifndef __APPLE__
 	login_cap_t *lc;
 #endif /* !__APPLE__ */
@@ -288,7 +293,10 @@ loginshell(void)
 	if (ticket != NULL)
 		setenv("KRBTKFILE", ticket, 1);
 
-	if (asprintf(args, "-%s", basename(shell)) < 0)
+	strlcpy(progbuf, shell, sizeof(progbuf));
+	prog = basename(progbuf);
+
+	if (asprintf(args, "-%s", prog) < 0)
 		err(1, "asprintf");
 	args[1] = NULL;
 
@@ -300,10 +308,15 @@ static void
 doshell(void)
 {
 	const char *shell;
+	char *prog, progbuf[PATH_MAX];
 
 	shell = pwd->pw_shell;
 	if (*shell == '\0')
 		shell = _PATH_BSHELL;
-	execl(shell, basename(shell), (char *)NULL);
+
+	strlcpy(progbuf, shell, sizeof(progbuf));
+	prog = basename(progbuf);
+
+	execl(shell, prog, (char *)NULL);
 	err(1, "%s", shell);
 }
