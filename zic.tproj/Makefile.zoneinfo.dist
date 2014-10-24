@@ -5,6 +5,11 @@
 # Alternately, if you discover you've got the wrong time zone, you can just
 #	zic -l rightzone
 
+################################################################################
+# NOTE: THIS MAKEFILE IS FOR REFERENCE ONLY AND IS NOT ACTUALLY EXECUTED AT
+# 	BUILD TIME
+################################################################################
+
 # This line has been moved to /usr/src/etc/Makefile
 LOCALTIME=	US/Pacific
 
@@ -45,9 +50,8 @@ YDATA=		africa antarctica asia australasia \
 		europe northamerica southamerica pacificnew etcetera factory \
 		backward
 NDATA=		systemv
-SDATA=		solar87 solar88 solar89
-TDATA=		$(YDATA) $(NDATA) $(SDATA)
-DATA=		$(YDATA) $(NDATA) $(SDATA) leapseconds # yearistype.sh
+TDATA=		$(YDATA) $(NDATA)
+DATA=		$(YDATA) $(NDATA) leapseconds # yearistype.sh
 USNO=		usno1988 usno1989
 
 ZIC=zic
