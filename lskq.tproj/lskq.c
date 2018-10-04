@@ -340,6 +340,10 @@ enum kqtype {
 	KQTYPE_DYNAMIC
 };
 
+#define POLICY_TIMESHARE        1
+#define POLICY_RR               2
+#define POLICY_FIFO             4
+
 static int
 process_kqueue(int pid, const char *procname, enum kqtype type, uint64_t kqid,
 		struct proc_fdinfo *fdlist, int nfds)
@@ -397,14 +401,32 @@ process_kqueue(int pid, const char *procname, enum kqtype type, uint64_t kqid,
 				printf("%-10s ", " "); // evst
 			} else {
 				printf("%-8s ", " "); // fdtype
-				printf("%-7s ", " "); // fflags
+				char policy_type;
+				switch (kqinfo.kqdi_pol) {
+					case POLICY_RR:
+						policy_type = 'R';
+						break;
+					case POLICY_FIFO:
+						policy_type = 'F';
+					case POLICY_TIMESHARE:
+					case 0:
+					default:
+						policy_type = '-';
+						break;
+				}
+				snprintf(tmpstr, 4, "%c%c%c", (kqinfo.kqdi_pri == 0)?'-':'P', policy_type, (kqinfo.kqdi_cpupercent == 0)?'-':'%');
+				printf("%-7s ", tmpstr); // fflags
 				printf("%-15s ", " "); // flags
 				printf("%-17s ", " "); // evst
 			}
 
-			int qos = MAX(MAX(kqinfo.kqdi_events_qos, kqinfo.kqdi_async_qos),
+			if (!raw && kqinfo.kqdi_pri != 0) {
+				printf("%3d ", kqinfo.kqdi_pri); //qos
+			} else {
+				int qos = MAX(MAX(kqinfo.kqdi_events_qos, kqinfo.kqdi_async_qos),
 					kqinfo.kqdi_sync_waiter_qos);
-			printf("%3s ", thread_qos_name(qos));
+				printf("%3s ", thread_qos_name(qos)); //qos
+			}
 			printf("%-18s ", " "); // data
 			printf("%-18s ", " "); // udata
 			printf("%#18llx ", kqinfo.kqdi_servicer); // ext0
@@ -776,17 +798,15 @@ cheatsheet(void)
 {
 	fprintf(stderr, "\nFilter-independent flags:\n\n\
 \033[1m\
-command                pid                 kq kqst              ident filter    fdtype   fflags      flags          evst\033[0m\n\
-\033[1m\
--------------------- ----- ------------------ ---- ------------------ --------- -------- ------- --------------- -----------------\033[0m\n\
+command                pid                 kq kqst               knid filter    fdtype   fflags       flags             evst       qos\033[0m\n\033[1m\
+-------------------- ----- ------------------ ---- ------------------ --------- -------- ------- --------------- ----------------- ---\033[0m\n\
                                                                                                            ┌ EV_UDATA_SPECIFIC\n\
                                                                                              EV_DISPATCH ┐ │┌ EV_FLAG0 (EV_POLL)\n\
                                                                                                EV_CLEAR ┐│ ││┌ EV_FLAG1 (EV_OOBAND)\n\
                                                                                             EV_ONESHOT ┐││ │││┌ EV_EOF\n\
                                                                                            EV_RECEIPT ┐│││ ││││┌ EV_ERROR\n\
-                                                                                                      ││││ │││││\n\
-\033[1m\
-launchd                  1                  4  ks- netbiosd       250 PROC               ------- andx r1cs upboe aqds dwca supt vn\033[0m \n\
+                                                                                                      ││││ │││││\n\033[1m\
+launchd                  1                  4  ks- netbiosd       250 PROC               ------- andx r1cs upboe aqds dwca supt vn  IN\033[0m \n\
                                             │  │││                                               ││││            ││││ ││││ ││││ ││\n\
           kqueue file descriptor/dynamic ID ┘  │││                                        EV_ADD ┘│││  KN_ACTIVE ┘│││ ││││ ││││ ││\n\
                                       KQ_SLEEP ┘││                                      EV_ENABLE ┘││   KN_QUEUED ┘││ ││││ ││││ ││\n\
