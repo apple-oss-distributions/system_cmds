@@ -671,7 +671,7 @@ main(int argc, char *argv[])
 		bail(SLEEP_EXIT, 1);
 	}
 
-#if defined(__APPLE__) && TARGET_OS_EMBEDDED
+#if defined(__APPLE__) && (TARGET_OS_IPHONE && !TARGET_OS_SIMULATOR)
 	/* on embedded, allow a shell to live in /private/var/personalized_debug/bin/sh */
 #define _PATH_DEBUGSHELL		"/private/var/personalized_debug/bin/sh"
         if (stat(pwd->pw_shell, &st) != 0) {
@@ -1235,12 +1235,16 @@ getloginname(void)
 		err(1, "malloc()");
 	do {
 		(void)printf("%s", prompt);
-		for (p = nbuf; (ch = getchar()) != '\n'; ) {
-			if (ch == EOF) {
-				badlogin(username);
-				bail(NO_SLEEP_EXIT, 0);
-			}
-			if (p < nbuf + MAXLOGNAME - 1)
+        /* rdar://43101375 login process on 2018 hardware is blocked forever waiting on new line char
+         * The carriage return char is added to the termination condition of the
+         * for loop because for some reason, '\r' is returned by getchar() on M9 hardware.
+         */
+		for (p = nbuf; (((ch = getchar()) != '\n') && (ch != '\r')); ) {
+            if (ch == EOF) {
+                badlogin(username);
+                bail(NO_SLEEP_EXIT, 0);
+            }
+            if (p < nbuf + MAXLOGNAME - 1)
 				*p++ = ch;
 		}
 	} while (p == nbuf);
