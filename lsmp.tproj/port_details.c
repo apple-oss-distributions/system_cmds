@@ -26,6 +26,7 @@
 #include <libproc.h>
 #include <assert.h>
 #include <mach/mach.h>
+//#include <mach/mach_port.h.h>
 #include <mach/mach_voucher.h>
 #include "common.h"
 #include "json.h"
@@ -34,8 +35,8 @@ const char * kobject_name(natural_t kotype)
 {
 	switch (kotype) {
         case IKOT_NONE:             return "message-queue";
-        case IKOT_THREAD:           return "THREAD";
-        case IKOT_TASK:             return "TASK";
+        case IKOT_THREAD_CONTROL:   return "THREAD-CONTROL";
+        case IKOT_TASK_CONTROL:     return "TASK-CONTROL";
         case IKOT_HOST:             return "HOST";
         case IKOT_HOST_PRIV:        return "HOST-PRIV";
         case IKOT_PROCESSOR:        return "PROCESSOR";
@@ -60,7 +61,7 @@ const char * kobject_name(natural_t kotype)
         case IKOT_LOCK_SET:         return "LOCK-SET";
         case IKOT_CLOCK:            return "CLOCK";
         case IKOT_CLOCK_CTRL:       return "CLOCK-CONTROL";
-        case IKOT_IOKIT_SPARE:      return "IOKIT-SPARE";
+        case IKOT_IOKIT_IDENT:      return "IOKIT-IDENT";
         case IKOT_NAMED_ENTRY:      return "NAMED-MEMORY";
         case IKOT_IOKIT_CONNECT:    return "IOKIT-CONNECT";
         case IKOT_IOKIT_OBJECT:     return "IOKIT-OBJECT";
@@ -72,6 +73,17 @@ const char * kobject_name(natural_t kotype)
         case IKOT_TASK_RESUME:      return "TASK_RESUME";
         case IKOT_VOUCHER:          return "VOUCHER";
         case IKOT_VOUCHER_ATTR_CONTROL: return "VOUCHER_ATTR_CONTROL";
+        case IKOT_WORK_INTERVAL:    return "WORK_INTERVAL";
+        case IKOT_UX_HANDLER:       return "UX_HANDLER";
+        case IKOT_UEXT_OBJECT:      return "UEXT_OBJECT";
+        case IKOT_ARCADE_REG:       return "ARCADE_REG";
+        case IKOT_EVENTLINK:        return "EVENTLINK";
+        case IKOT_TASK_INSPECT:     return "TASK-INSPECT";
+        case IKOT_TASK_READ:        return "TASK-READ";
+        case IKOT_THREAD_INSPECT:   return "THREAD-INSPECT";
+        case IKOT_THREAD_READ:      return "THREAD-READ";
+        case IKOT_SUID_CRED:        return "SUID_CRED";
+        case IKOT_HYPERVISOR:       return "HYPERVISOR";
         case IKOT_UNKNOWN:
         default:                    return "UNKNOWN";
 	}
@@ -149,25 +161,21 @@ uint32_t show_recipe_detail(mach_voucher_attr_recipe_t recipe, char *voucher_out
     JSON_OBJECT_SET(json, previous_voucher, "0x%x", recipe->previous_voucher);
     JSON_OBJECT_SET(json, content_size, %u, recipe->content_size);
 
-    switch (recipe->key) {
-        case MACH_VOUCHER_ATTR_KEY_ATM:
-            JSON_OBJECT_SET(json, ATM_ID, %llu, *(uint64_t *)(uintptr_t)recipe->content);
-            len += snprintf(&voucher_outstr[len], safesize(maxlen - len), VOUCHER_DETAIL_PREFIX "ATM ID: %llu", *(uint64_t *)(uintptr_t)recipe->content);
-            break;
-        case MACH_VOUCHER_ATTR_KEY_IMPORTANCE:
-            // content may not be valid JSON, exclude
-            // JSON_OBJECT_SET(json, importance_info, "%s", (char *)recipe->content);
-            len += snprintf(&voucher_outstr[len], safesize(maxlen - len), VOUCHER_DETAIL_PREFIX "IMPORTANCE INFO: %s", (char *)recipe->content);
-            break;
-        case MACH_VOUCHER_ATTR_KEY_BANK:
-            // content may not be valid JSON, exclude
-            // JSON_OBJECT_SET(json, resource_accounting_info, "%s", (char *)recipe->content);
-            len += snprintf(&voucher_outstr[len], safesize(maxlen - len), VOUCHER_DETAIL_PREFIX "RESOURCE ACCOUNTING INFO: %s", (char *)recipe->content);
-            break;
-        default:
-            len += print_hex_data(&voucher_outstr[len], safesize(maxlen - len), VOUCHER_DETAIL_PREFIX, "Recipe Contents", (void *)recipe->content, MIN(recipe->content_size, lsmp_config.voucher_detail_length));
-            break;
-    }
+	switch (recipe->key) {
+	case MACH_VOUCHER_ATTR_KEY_IMPORTANCE:
+		// content may not be valid JSON, exclude
+		// JSON_OBJECT_SET(json, importance_info, "%s", (char *)recipe->content);
+		len += snprintf(&voucher_outstr[len], safesize(maxlen - len), VOUCHER_DETAIL_PREFIX "IMPORTANCE INFO: %s", (char *)recipe->content);
+		break;
+	case MACH_VOUCHER_ATTR_KEY_BANK:
+		// content may not be valid JSON, exclude
+		// JSON_OBJECT_SET(json, resource_accounting_info, "%s", (char *)recipe->content);
+		len += snprintf(&voucher_outstr[len], safesize(maxlen - len), VOUCHER_DETAIL_PREFIX "RESOURCE ACCOUNTING INFO: %s", (char *)recipe->content);
+		break;
+	default:
+		len += print_hex_data(&voucher_outstr[len], safesize(maxlen - len), VOUCHER_DETAIL_PREFIX, "Recipe Contents", (void *)recipe->content, MIN(recipe->content_size, lsmp_config.voucher_detail_length));
+		break;
+	}
 
     if (len + 1 < maxlen && voucher_outstr[len - 1] != '\n') {
         voucher_outstr[len++] = '\n';
@@ -307,6 +315,8 @@ static void show_task_table_entry(ipc_info_name_t *entry, my_per_task_info_t *ta
     int sendrights = 0;
     unsigned int kotype = 0;
     vm_offset_t kobject = (vm_offset_t)0;
+    kobject_description_t desc;
+    mach_vm_address_t kaddr;
 
     /* skip empty slots in the table */
     if ((entry->iin_type & MACH_PORT_TYPE_ALL_RIGHTS) == 0) {
@@ -598,14 +608,30 @@ static void show_task_table_entry(ipc_info_name_t *entry, my_per_task_info_t *ta
            (send) ? sendrights : 0);
 
     /* converting to kobjects is not always supported */
-    ret = mach_port_kernel_object(taskinfo->task,
+
+    desc[0] = '\0';
+    ret = mach_port_kobject_description(taskinfo->task,
+                                  entry->iin_name,
+                                  &kotype, &kaddr,
+                                  desc);
+    if (KERN_SUCCESS == ret) {
+	    kobject = (unsigned) kaddr;
+    } else {
+	    ret = mach_port_kernel_object(taskinfo->task,
                                   entry->iin_name,
                                   &kotype, (unsigned *)&kobject);
+    }
+
     if (ret == KERN_SUCCESS && kotype != 0) {
         JSON_OBJECT_SET(json, identifier, "0x%08x", (natural_t)kobject);
         JSON_OBJECT_SET(json, type, "%s", kobject_name(kotype));
-        printf("                                             0x%08x  %s", (natural_t)kobject, kobject_name(kotype));
-        if ((kotype == IKOT_TASK_RESUME) || (kotype == IKOT_TASK) || (kotype == IKOT_TASK_NAME)) {
+	if (desc[0]) {
+		JSON_OBJECT_SET(json, description, "%s", desc);
+		printf("                                             0x%08x  %s %s", (natural_t)kobject, kobject_name(kotype), desc);
+	} else {
+		printf("                                             0x%08x  %s", (natural_t)kobject, kobject_name(kotype));
+	}
+        if ((kotype == IKOT_TASK_RESUME) || (kotype == IKOT_TASK_CONTROL) || (kotype == IKOT_TASK_NAME)) {
             if (taskinfo->task_kobject == kobject) {
                 /* neat little optimization since in most cases tasks have themselves in their ipc space */
                 JSON_OBJECT_SET(json, pid, %d, taskinfo->pid);
@@ -619,7 +645,7 @@ static void show_task_table_entry(ipc_info_name_t *entry, my_per_task_info_t *ta
             }
         }
 
-			if (kotype == IKOT_THREAD) {
+			if (kotype == IKOT_THREAD_CONTROL) {
 				for (int i = 0; i < taskinfo->threadCount; i++) {
 					if (taskinfo->threadInfos[i].th_kobject == kobject) {
 						printf(" (%#llx)", taskinfo->threadInfos[i].th_id);

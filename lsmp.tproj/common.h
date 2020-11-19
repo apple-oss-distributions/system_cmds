@@ -97,8 +97,8 @@ typedef struct my_per_task_info {
  * Need to stay in sync to print accurate results.
  */
 #define IKOT_NONE                  0
-#define IKOT_THREAD                1
-#define IKOT_TASK                  2
+#define IKOT_THREAD_CONTROL        1
+#define IKOT_TASK_CONTROL          2
 #define IKOT_HOST                  3
 #define IKOT_HOST_PRIV             4
 #define IKOT_PROCESSOR             5
@@ -123,7 +123,7 @@ typedef struct my_per_task_info {
 #define IKOT_LOCK_SET             24
 #define IKOT_CLOCK                25
 #define IKOT_CLOCK_CTRL           26
-#define IKOT_IOKIT_SPARE          27
+#define IKOT_IOKIT_IDENT          27
 #define IKOT_NAMED_ENTRY          28
 #define IKOT_IOKIT_CONNECT        29
 #define IKOT_IOKIT_OBJECT         30
@@ -135,7 +135,19 @@ typedef struct my_per_task_info {
 #define IKOT_TASK_RESUME          36
 #define IKOT_VOUCHER              37
 #define IKOT_VOUCHER_ATTR_CONTROL 38
-#define IKOT_UNKNOWN              39	/* magic catchall	*/
+#define IKOT_WORK_INTERVAL        39
+#define IKOT_UX_HANDLER           40
+#define IKOT_UEXT_OBJECT          41
+#define IKOT_ARCADE_REG           42
+#define IKOT_EVENTLINK            43
+#define IKOT_TASK_INSPECT         44
+#define IKOT_TASK_READ            45
+#define IKOT_THREAD_INSPECT       46
+#define IKOT_THREAD_READ          47
+#define IKOT_SUID_CRED            48
+#define IKOT_HYPERVISOR           49
+
+#define IKOT_UNKNOWN              50	/* magic catchall	*/
 #define IKOT_MAX_TYPE             (IKOT_UNKNOWN+1)	/* # of IKOT_ types	*/
 
 
