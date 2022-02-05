@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Scheme
    LastUpgradeVersion = "1240"
-   version = "1.8">
+   version = "1.7">
    <BuildAction
       parallelizeBuildables = "YES"
-      buildImplicitDependencies = "NO">
+      buildImplicitDependencies = "YES">
       <BuildActionEntries>
          <BuildActionEntry
             buildForTesting = "YES"
@@ -14,9 +14,9 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "BA4FD2FE1372FE4E0025925C"
-               BuildableName = "All_MacOSX"
-               BlueprintName = "All_MacOSX"
+               BlueprintIdentifier = "1812F18C1C8F923900F3DC9E"
+               BuildableName = "All_Bridge"
+               BlueprintName = "All_Bridge"
                ReferencedContainer = "container:system_cmds.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -40,15 +40,6 @@
       debugDocumentVersioning = "YES"
       debugServiceExtension = "internal"
       allowLocationSimulation = "YES">
-      <MacroExpansion>
-         <BuildableReference
-            BuildableIdentifier = "primary"
-            BlueprintIdentifier = "BA4FD2FE1372FE4E0025925C"
-            BuildableName = "All_MacOSX"
-            BlueprintName = "All_MacOSX"
-            ReferencedContainer = "container:system_cmds.xcodeproj">
-         </BuildableReference>
-      </MacroExpansion>
    </LaunchAction>
    <ProfileAction
       buildConfiguration = "Release"
@@ -56,6 +47,15 @@
       savedToolIdentifier = ""
       useCustomWorkingDirectory = "NO"
       debugDocumentVersioning = "YES">
+      <MacroExpansion>
+         <BuildableReference
+            BuildableIdentifier = "primary"
+            BlueprintIdentifier = "1812F18C1C8F923900F3DC9E"
+            BuildableName = "All_Bridge"
+            BlueprintName = "All_Bridge"
+            ReferencedContainer = "container:system_cmds.xcodeproj">
+         </BuildableReference>
+      </MacroExpansion>
    </ProfileAction>
    <AnalyzeAction
       buildConfiguration = "Release">
@@ -65,7 +65,6 @@
       revealArchiveInOrganizer = "YES">
    </ArchiveAction>
    <InstallAction
-      buildConfiguration = "Release"
-      includeDebugSupportFiles = "YES">
+      buildConfiguration = "Release">
    </InstallAction>
 </Scheme>
